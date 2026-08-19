@@ -90,6 +90,7 @@ public partial class App : Application
         services.AddSingleton<AutoStartService>();
         services.AddSingleton<TelegramBotService>();
         services.AddSingleton<CardFarmService>();
+        services.AddSingleton<UpdateService>();
         services.AddSingleton<SystemTrayService>();
         services.AddSingleton<IDialogService, DialogService>();
 
@@ -97,6 +98,14 @@ public partial class App : Application
         {
             client.DefaultRequestHeaders.Add("User-Agent", "Hourglass/1.0");
             client.Timeout = TimeSpan.FromSeconds(30);
+        });
+
+        // GitHub rejects requests without a User-Agent and wants the versioned API media type.
+        services.AddHttpClient(HttpClients.GitHub, client =>
+        {
+            client.DefaultRequestHeaders.Add("User-Agent", "Hourglass-Updater");
+            client.DefaultRequestHeaders.Add("Accept", "application/vnd.github+json");
+            client.Timeout = TimeSpan.FromMinutes(10);
         });
 
         // Long polling holds the request open for ~25s, so the timeout must exceed it.

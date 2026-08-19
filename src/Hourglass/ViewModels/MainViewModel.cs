@@ -20,6 +20,7 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
     private readonly SystemTrayService _tray;
     private readonly AutoStartService _autoStart;
     private readonly TelegramBotService _telegram;
+    private readonly UpdateService _updates;
     private readonly Dictionary<string, SessionState> _notifiedStates = new(StringComparer.OrdinalIgnoreCase);
     private readonly Func<string, SteamBoostSession> _sessionFactory;
     private readonly DispatcherTimer _timer;
@@ -41,6 +42,7 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
         SystemTrayService tray,
         AutoStartService autoStart,
         TelegramBotService telegram,
+        UpdateService updates,
         Func<string, SteamBoostSession> sessionFactory)
     {
         _store = store;
@@ -52,10 +54,12 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
         _tray = tray;
         _autoStart = autoStart;
         _telegram = telegram;
+        _updates = updates;
         _sessionFactory = sessionFactory;
 
         AddAccountCommand = new AsyncRelayCommand(_ => AddAccountAsync());
         OpenSettingsCommand = new RelayCommand(_ => _dialogs.ShowSettings(this));
+        OpenUpdateCommand = new RelayCommand(_ => OfferUpdate(), _ => HasUpdate);
         StartAllCommand = new AsyncRelayCommand(_ => StartAllAsync(), _ => Accounts.Any(a => !a.IsRunning));
         StopAllCommand = new AsyncRelayCommand(_ => StopAllAsync(), _ => Accounts.Any(a => a.IsRunning));
 
@@ -76,6 +80,7 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
 
     public ICommand AddAccountCommand { get; }
     public ICommand OpenSettingsCommand { get; }
+    public ICommand OpenUpdateCommand { get; }
     public ICommand StartAllCommand { get; }
     public ICommand StopAllCommand { get; }
 
@@ -163,6 +168,45 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
         AsyncHelper.FireAndForget(StartAutoStartAccountsAsync, nameof(StartAutoStartAccountsAsync));
 
         _telegram.Start(this);
+
+        AsyncHelper.FireAndForget(CheckForUpdatesAsync, nameof(CheckForUpdatesAsync));
+    }
+
+    /// <summary>Raised when a staged update needs the app to close and come back.</summary>
+    public event EventHandler? RestartRequested;
+
+    private UpdateInfo? _availableUpdate;
+
+    public bool HasUpdate => _availableUpdate is not null;
+
+    public string UpdateButtonText => _availableUpdate is { } update
+        ? $"Обновить до {update.Version.Major}.{update.Version.Minor}"
+        : "Обновить";
+
+    /// <summary>Looks for a newer build. Silent when there is none or GitHub is unreachable.</summary>
+    public async Task CheckForUpdatesAsync()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var update = await _updates.CheckAsync(timeout.Token).ConfigureAwait(true);
+
+        if (update is null)
+            return;
+
+        _availableUpdate = update;
+        OnPropertyChanged(nameof(HasUpdate));
+        OnPropertyChanged(nameof(UpdateButtonText));
+        CommandManager.InvalidateRequerySuggested();
+
+        _logger.Info(AppLogScopes.App, $"Доступна версия {update.Tag}");
+    }
+
+    private void OfferUpdate()
+    {
+        if (_availableUpdate is not { } update)
+            return;
+
+        if (_dialogs.ShowUpdate(update))
+            RestartRequested?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>Spaces out the opening handshakes so Steam is not hit by all at once.</summary>
@@ -210,22 +254,51 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
     public Task<string> DescribeStatusAsync() => OnUiAsync(() =>
     {
         if (Accounts.Count == 0)
-            return "Аккаунтов нет.";
+            return "Аккаунтов нет. Добавьте их в программе на компьютере.";
 
-        var lines = Accounts.Select(account =>
+        var boosting = Accounts.Count(account => account.State == SessionState.Boosting);
+
+        var header = boosting == Accounts.Count
+            ? $"<b>Всё работает</b> · {Plural.Accounts(Accounts.Count)}"
+            : $"<b>Накрутка идёт у {boosting} из {Accounts.Count}</b>";
+
+        var blocks = Accounts.Select(account =>
         {
-            var clock = account.HasSessionClock ? $", сессия {account.SessionClockText}" : "";
-            var detail = string.IsNullOrWhiteSpace(account.StatusDetail) ? "" : $"\n   {account.StatusDetail}";
-            return $"• {account.DisplayName} — {account.StateText}{clock}\n" +
-                   $"   всего {account.TotalBoostedText}, игр отмечено {account.ActiveGameCount}{detail}";
+            var name = TelegramBotService.Escape(account.DisplayName);
+            var block = $"{StateMark(account.State)} <b>{name}</b> — {account.StateText.ToLowerInvariant()}";
+
+            var facts = new List<string>();
+            if (account.HasSessionClock)
+                facts.Add(account.SessionClockText);
+            facts.Add($"всего {account.TotalBoostedText}");
+            if (account.State == SessionState.Boosting)
+                facts.Add(Plural.Games(account.ActiveGameCount));
+
+            block += "\n" + string.Join(" · ", facts);
+
+            // The detail line only earns its place when it says something the state does not.
+            if (!string.IsNullOrWhiteSpace(account.StatusDetail) && account.State != SessionState.Boosting)
+                block += $"\n<i>{TelegramBotService.Escape(account.StatusDetail)}</i>";
+
+            return block;
         });
 
-        var client = _watcher.SignedInAccount is { } signedIn
-            ? $"\nКлиент Steam запущен под {signedIn}."
+        var footer = _watcher.SignedInAccount is { } signedIn
+            ? $"\n\n<i>Клиент Steam открыт под {TelegramBotService.Escape(signedIn)}</i>"
             : "";
 
-        return string.Join("\n", lines) + client;
+        return header + "\n\n" + string.Join("\n\n", blocks) + footer;
     });
+
+    /// <summary>A coloured dot reads far faster on a phone than the word does.</summary>
+    private static string StateMark(SessionState state) => state switch
+    {
+        SessionState.Boosting => "\U0001F7E2",
+        SessionState.Connecting or SessionState.SigningIn => "\U0001F535",
+        SessionState.Paused or SessionState.Reconnecting => "\U0001F7E1",
+        SessionState.NeedsLogin or SessionState.Failed => "\U0001F534",
+        _ => "⚪"
+    };
 
     Task<string> IBoostController.StartAllAsync() => OnUiFlatAsync(async () =>
     {
@@ -280,11 +353,16 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
 
         var wasBroken = previous is SessionState.NeedsLogin or SessionState.Failed;
 
+        var name = TelegramBotService.Escape(account.DisplayName);
+
         var message = current switch
         {
-            SessionState.NeedsLogin => $"⚠ {account.DisplayName}: Steam не принял сохранённый вход. Нужен вход заново.",
-            SessionState.Failed => $"⚠ {account.DisplayName}: ошибка — {account.StatusDetail}",
-            SessionState.Boosting when wasBroken => $"✓ {account.DisplayName}: снова работает.",
+            SessionState.NeedsLogin =>
+                $"\U0001F534 <b>{name}</b>\nSteam не принял сохранённый вход — нужно войти заново.",
+            SessionState.Failed =>
+                $"\U0001F534 <b>{name}</b>\n{TelegramBotService.Escape(account.StatusDetail)}",
+            SessionState.Boosting when wasBroken =>
+                $"\U0001F7E2 <b>{name}</b>\nСнова работает.",
             _ => null
         };
 

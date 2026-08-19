@@ -12,17 +12,20 @@ public sealed class DialogService : IDialogService
     private readonly IAppLogger _logger;
     private readonly IConfigStore _store;
     private readonly TelegramBotService _telegram;
+    private readonly UpdateService _updates;
 
     public DialogService(
         SteamLoginService loginService,
         IAppLogger logger,
         IConfigStore store,
-        TelegramBotService telegram)
+        TelegramBotService telegram,
+        UpdateService updates)
     {
         _loginService = loginService;
         _logger = logger;
         _store = store;
         _telegram = telegram;
+        _updates = updates;
     }
 
     public Task<LoginResult?> ShowLoginAsync(string? presetUsername, string? guardData)
@@ -62,6 +65,17 @@ public sealed class DialogService : IDialogService
     {
         var window = new LogWindow(account) { Owner = ResolveOwner() };
         window.ShowDialog();
+    }
+
+    public bool ShowUpdate(UpdateInfo update)
+    {
+        var window = new UpdateWindow(new UpdateViewModel(_updates, update))
+        {
+            Owner = ResolveOwner()
+        };
+
+        window.ShowDialog();
+        return window.ShouldRestart;
     }
 
     public bool Confirm(string title, string message) =>

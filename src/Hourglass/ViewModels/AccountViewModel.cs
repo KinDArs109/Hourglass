@@ -37,6 +37,7 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
     private string _farmStatus = "";
     private DateTime _nextFarmCheckUtc = DateTime.MinValue;
     private bool _isRefreshingFarm;
+    private bool _isFarmTab;
     private DateTime? _scheduleSuppressedUntil;
     private string _scheduleHint = "";
     private bool _isApplyingSchedule;
@@ -75,6 +76,7 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
         SignInCommand = new AsyncRelayCommand(_ => SignInAsync());
         AddGamesCommand = new AsyncRelayCommand(_ => AddGamesAsync());
         RemoveGameCommand = new RelayCommand(parameter => RemoveGame(parameter as GameViewModel));
+        RefreshFarmCommand = new AsyncRelayCommand(_ => RefreshFarmNowAsync(), _ => FarmCards && !_isRefreshingFarm);
         RemoveAccountCommand = new RelayCommand(_ => RemoveRequested?.Invoke(this, EventArgs.Empty));
         ShowLogCommand = new RelayCommand(_ => _dialogs.ShowLog(this));
     }
@@ -100,6 +102,7 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
     public ICommand SignInCommand { get; }
     public ICommand AddGamesCommand { get; }
     public ICommand RemoveGameCommand { get; }
+    public ICommand RefreshFarmCommand { get; }
     public ICommand RemoveAccountCommand { get; }
     public ICommand ShowLogCommand { get; }
 
@@ -218,6 +221,48 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
         }
     }
 
+    /// <summary>Everything the last badge read found, newest choice first.</summary>
+    public ObservableCollection<FarmGameViewModel> FarmGames { get; } = new();
+
+    public bool HasFarmGames => FarmGames.Count > 0;
+
+    public string FarmSummary => FarmGames.Count == 0
+        ? "Список появится после первого чтения значков"
+        : $"{Plural.Games(FarmGames.Count)} с карточками · всего {FarmGames.Sum(game => game.DropsRemaining)} шт.";
+
+    /// <summary>Which half of the account pane is on screen.</summary>
+    public bool IsGamesTab
+    {
+        get => !_isFarmTab;
+        set
+        {
+            if (value)
+                IsFarmTab = false;
+        }
+    }
+
+    public bool IsFarmTab
+    {
+        get => _isFarmTab;
+        set
+        {
+            if (!SetProperty(ref _isFarmTab, value))
+                return;
+
+            OnPropertyChanged(nameof(IsGamesTab));
+        }
+    }
+
+    /// <summary>Re-reads the badge pages right now instead of waiting out the interval.</summary>
+    public async Task RefreshFarmNowAsync()
+    {
+        if (!FarmCards)
+            return;
+
+        _nextFarmCheckUtc = DateTime.MinValue;
+        await RefreshCardFarmAsync().ConfigureAwait(true);
+    }
+
     /// <summary>What the card farmer is doing, shown instead of the games counter.</summary>
     public string FarmStatus
     {
@@ -268,6 +313,7 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
             var changed = !_farmAppIds.SequenceEqual(plan.AppIds);
             _farmAppIds = plan.AppIds;
             FarmStatus = plan.Status;
+            ApplyFarmGames(plan);
 
             if (plan.IsFinished)
             {
@@ -514,6 +560,18 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
 
         if (IsRunning)
             await StopAsync(StopReason.Schedule).ConfigureAwait(true);
+    }
+
+    private void ApplyFarmGames(FarmPlan plan)
+    {
+        var active = plan.AppIds.ToHashSet();
+
+        FarmGames.Clear();
+        foreach (var badge in plan.Pending)
+            FarmGames.Add(new FarmGameViewModel(badge, active.Contains(badge.AppId), Capsules));
+
+        OnPropertyChanged(nameof(HasFarmGames));
+        OnPropertyChanged(nameof(FarmSummary));
     }
 
     private ScheduleDecision EvaluateSchedule() =>

@@ -22,6 +22,7 @@ public partial class MainWindow : Window
 
         _tray.ShowRequested += OnShowRequested;
         _tray.ExitRequested += OnExitRequested;
+        _viewModel.RestartRequested += OnExitRequested;
 
         SourceInitialized += (_, _) => DwmHelper.ApplyDarkTitleBar(this);
     }

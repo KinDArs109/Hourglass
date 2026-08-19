@@ -1,0 +1,64 @@
+name: Релиз
+
+# Пуш тега вида v1.1 собирает портативный exe и выкладывает его в релиз.
+# Версия берётся из тега, чтобы автообновление в программе сравнивало правильные числа.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Версия из тега
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag.TrimStart('v')
+          if ($version -notmatch '^\d+\.\d+(\.\d+)?$') {
+            Write-Error "Тег '$tag' не похож на версию: нужен вид v1.2 или v1.2.3"
+            exit 1
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { $version = "$version.0" }
+          "value=$version" >> $env:GITHUB_OUTPUT
+          "Версия сборки: $version"
+
+      - name: Сборка портативного exe
+        shell: pwsh
+        run: |
+          dotnet publish src/Hourglass/Hourglass.csproj `
+            -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=none `
+            -p:Version=${{ steps.version.outputs.value }} `
+            -o publish
+
+      - name: Проверка, что exe собрался
+        shell: pwsh
+        run: |
+          $exe = Get-Item publish/Hourglass.exe
+          "Размер: $([math]::Round($exe.Length / 1MB, 1)) МБ"
+          if ($exe.Length -lt 10MB) { Write-Error "Файл подозрительно мал"; exit 1 }
+
+      - name: Публикация релиза
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "publish/Hourglass.exe#Hourglass.exe (портативный, Windows x64)" `
+            --title "Hourglass ${{ github.ref_name }}" `
+            --generate-notes

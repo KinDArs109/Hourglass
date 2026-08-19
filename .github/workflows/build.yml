@@ -1,0 +1,27 @@
+name: Сборка
+
+# Проверяет, что код собирается, на каждый пуш и pull request в main.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Восстановление пакетов
+        run: dotnet restore Hourglass.sln
+
+      - name: Сборка
+        run: dotnet build Hourglass.sln -c Release --no-restore -warnaserror

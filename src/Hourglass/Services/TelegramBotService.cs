@@ -228,7 +228,7 @@ public sealed class TelegramBotService : IDisposable
                 StateChanged?.Invoke(this, EventArgs.Empty);
 
                 await SendAsync(chatId,
-                    "Готово, чат привязан. /help — что я умею.",
+                    "Готово, чат привязан.\n\n" + Help,
                     cancellationToken).ConfigureAwait(false);
                 return;
             }
@@ -292,7 +292,14 @@ public sealed class TelegramBotService : IDisposable
             using var response = await client
                 .PostAsJsonAsync(
                     $"https://api.telegram.org/bot{_token}/sendMessage",
-                    new { chat_id = chatId, text, disable_notification = false },
+                    new
+                    {
+                        chat_id = chatId,
+                        text,
+                        parse_mode = "HTML",
+                        disable_web_page_preview = true,
+                        disable_notification = false
+                    },
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -317,12 +324,21 @@ public sealed class TelegramBotService : IDisposable
     }
 
     private const string Help =
-        "Hourglass\n" +
-        "/status — что сейчас происходит\n" +
-        "/run — запустить все аккаунты\n" +
-        "/run имя — запустить один\n" +
-        "/stop — остановить все\n" +
-        "/stop имя — остановить один";
+        "<b>Hourglass</b>\n\n" +
+        "<code>/status</code> — что сейчас происходит\n" +
+        "<code>/run</code> — запустить все аккаунты\n" +
+        "<code>/run имя</code> — запустить один\n" +
+        "<code>/stop</code> — остановить все\n" +
+        "<code>/stop имя</code> — остановить один";
+
+    /// <summary>
+    /// Messages go out as HTML, so anything coming from Steam — persona names, error
+    /// text — has to be tamed before it lands in the markup.
+    /// </summary>
+    public static string Escape(string text) => text
+        .Replace("&", "&amp;", StringComparison.Ordinal)
+        .Replace("<", "&lt;", StringComparison.Ordinal)
+        .Replace(">", "&gt;", StringComparison.Ordinal);
 
     // ------------------------------------------------------------------- wire
 

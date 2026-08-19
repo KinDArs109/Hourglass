@@ -1,7 +1,14 @@
 namespace Hourglass.Services;
 
-/// <summary>What to idle next in order to keep card drops coming, and why.</summary>
-public sealed record FarmPlan(IReadOnlyList<uint> AppIds, string Status, bool IsFinished);
+/// <summary>
+/// What to idle next in order to keep card drops coming, why, and everything the
+/// badge pages reported — the page shows the whole picture, not just the choice.
+/// </summary>
+public sealed record FarmPlan(
+    IReadOnlyList<uint> AppIds,
+    string Status,
+    bool IsFinished,
+    IReadOnlyList<CardBadge> Pending);
 
 /// <summary>
 /// Turns badge data into an idling plan.
@@ -21,13 +28,20 @@ public static class CardFarmPlanner
         var pending = badges.Where(badge => badge.DropsRemaining > 0).ToList();
 
         if (pending.Count == 0)
-            return new FarmPlan(Array.Empty<uint>(), "Карточек для фарма не осталось", IsFinished: true);
+            return new FarmPlan(
+                Array.Empty<uint>(), "Карточек для фарма не осталось", IsFinished: true, pending);
 
         var totalDrops = pending.Sum(badge => badge.DropsRemaining);
 
-        var ready = pending
+        // Ready games first, then the ones still short of the threshold: that is the
+        // order the farm will actually work through them.
+        var ordered = pending
+            .OrderByDescending(badge => badge.HoursPlayed >= HoursBeforeDropsBegin)
+            .ThenByDescending(badge => badge.DropsRemaining)
+            .ToList();
+
+        var ready = ordered
             .Where(badge => badge.HoursPlayed >= HoursBeforeDropsBegin)
-            .OrderByDescending(badge => badge.DropsRemaining)
             .ToList();
 
         if (ready.Count > 0)
@@ -42,7 +56,8 @@ public static class CardFarmPlanner
                 ? $"Фарм «{selected[0].Name}» · карточек осталось {readyDrops}{tail}"
                 : $"Фарм: игр {selected.Count}, карточек осталось {readyDrops}{tail}";
 
-            return new FarmPlan(selected.Select(badge => badge.AppId).ToList(), status, IsFinished: false);
+            return new FarmPlan(
+                selected.Select(badge => badge.AppId).ToList(), status, IsFinished: false, ordered);
         }
 
         // Nothing is past the threshold yet. Below it Steam ignores a game that is idled
@@ -54,6 +69,7 @@ public static class CardFarmPlanner
             new[] { warmup.AppId },
             $"Разогрев «{warmup.Name}»: ещё {hoursLeft:0.#} ч до первых карточек · " +
             $"в очереди игр {pending.Count}, карточек всего {totalDrops}",
-            IsFinished: false);
+            IsFinished: false,
+            ordered);
     }
 }
