@@ -1,0 +1,570 @@
+<Window x:Class="Hourglass.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:Hourglass.Views"
+        xmlns:converters="clr-namespace:Hourglass.Converters"
+        Style="{StaticResource AppWindow}"
+        Title="Hourglass"
+        Width="1140" Height="770"
+        MinWidth="940" MinHeight="640"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+        <converters:BoolToVisibilityConverter x:Key="InverseBoolToVisibility" Invert="True" />
+        <converters:SessionStateToBrushConverter x:Key="StateToBrush" />
+        <converters:LogLevelToBrushConverter x:Key="LevelToBrush" />
+        <converters:InverseBooleanConverter x:Key="InverseBool" />
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- ==================================================== title bar -->
+        <Border Grid.Row="0" Background="{StaticResource SidebarBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="20,0">
+            <Grid Height="60">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <views:BrandMark Width="24" Height="24" VerticalAlignment="Center" />
+                    <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="Hourglass" FontFamily="{StaticResource DisplayFont}"
+                                   FontSize="16" FontWeight="SemiBold" />
+                        <TextBlock Text="накрутка часов Steam без клиента"
+                                   Style="{StaticResource MetricText}"
+                                   Foreground="{StaticResource TextMutedBrush}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button Content="Запустить все"
+                            Style="{StaticResource SecondaryButton}"
+                            Command="{Binding StartAllCommand}" />
+                    <Button Content="Остановить все"
+                            Style="{StaticResource GhostButton}"
+                            Command="{Binding StopAllCommand}"
+                            Margin="8,0,0,0" />
+                    <Button Content="Настройки"
+                            Style="{StaticResource GhostButton}"
+                            Command="{Binding OpenSettingsCommand}"
+                            ToolTip="Управление с телефона через Telegram"
+                            Margin="8,0,0,0" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ====================================================== content -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="292" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- ================================================ sidebar -->
+            <Border Background="{StaticResource SidebarBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,0,1,0">
+                <Grid Margin="14,16,14,14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="4,0,0,10">
+                        <TextBlock Text="АККАУНТЫ" Style="{StaticResource SectionHeaderText}"
+                                   VerticalAlignment="Center" />
+                        <Button Content="+ Добавить"
+                                Style="{StaticResource GhostButton}"
+                                Padding="10,4"
+                                MinHeight="26"
+                                FontSize="12"
+                                HorizontalAlignment="Right"
+                                Command="{Binding AddAccountCommand}" />
+                    </Grid>
+
+                    <ListBox Grid.Row="1"
+                             ItemsSource="{Binding Accounts}"
+                             SelectedItem="{Binding SelectedAccount}"
+                             ItemContainerStyle="{StaticResource AccountListItem}"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="10,9">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Grid Width="34" Height="34" VerticalAlignment="Center">
+                                        <Ellipse Fill="{StaticResource ElevatedBrush}"
+                                                 Stroke="{StaticResource BorderStrongBrush}"
+                                                 StrokeThickness="1" />
+                                        <TextBlock Text="{Binding Initial}"
+                                                   FontSize="14" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" />
+                                        <Ellipse Width="10" Height="10"
+                                                 HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                                 Margin="0,0,-1,-1"
+                                                 Stroke="{StaticResource SidebarBrush}"
+                                                 StrokeThickness="2"
+                                                 Fill="{Binding State, Converter={StaticResource StateToBrush}}" />
+                                    </Grid>
+
+                                    <StackPanel Grid.Column="1" Margin="11,0,8,0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding DisplayName}"
+                                                   FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding StateText}"
+                                                   Style="{StaticResource MetricText}"
+                                                   Foreground="{Binding State, Converter={StaticResource StateToBrush}}"
+                                                   Margin="0,1,0,0" />
+                                    </StackPanel>
+
+                                    <TextBlock Grid.Column="2"
+                                               Text="{Binding TotalBoostedText}"
+                                               Style="{StaticResource MetricText}"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <StackPanel Grid.Row="2" Margin="4,14,4,0">
+                        <Rectangle Style="{StaticResource HairLine}" Margin="0,0,0,12" />
+                        <TextBlock Text="НАСТРОЙКИ" Style="{StaticResource SectionHeaderText}" Margin="0,0,0,4" />
+                        <CheckBox Style="{StaticResource ToggleSwitch}"
+                                  Content="Сворачивать в трей"
+                                  IsChecked="{Binding MinimizeToTray}" />
+                        <CheckBox Style="{StaticResource ToggleSwitch}"
+                                  Content="Пауза, когда играю сам"
+                                  IsChecked="{Binding PauseWhenSteamClientRuns}"
+                                  ToolTip="Накрутка уступает, только когда вы запустили игру на том же аккаунте. Просто сидеть в Steam она не мешает." />
+                        <CheckBox Style="{StaticResource ToggleSwitch}"
+                                  Content="Запускать с Windows"
+                                  IsChecked="{Binding LaunchWithWindows}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ================================================= detail -->
+            <Grid Grid.Column="1">
+
+                <!-- Empty state -->
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                            MaxWidth="380"
+                            Visibility="{Binding HasAccounts, Converter={StaticResource InverseBoolToVisibility}}">
+                    <views:BrandMark Width="56" Height="56" Opacity="0.55" HorizontalAlignment="Center" />
+                    <TextBlock Text="Ни одного аккаунта"
+                               Style="{StaticResource TitleText}"
+                               HorizontalAlignment="Center"
+                               Margin="0,18,0,0" />
+                    <TextBlock Style="{StaticResource SecondaryText}"
+                               TextWrapping="Wrap"
+                               TextTrimming="None"
+                               TextAlignment="Center"
+                               Margin="0,8,0,20"
+                               Text="Добавьте аккаунт Steam, выберите игры — и часы будут идти без запущенного клиента." />
+                    <Button Content="Добавить аккаунт"
+                            Style="{StaticResource PrimaryButton}"
+                            HorizontalAlignment="Center"
+                            Command="{Binding AddAccountCommand}" />
+                </StackPanel>
+
+                <!-- Selected account -->
+                <Grid Margin="20"
+                      DataContext="{Binding SelectedAccount}"
+                      Visibility="{Binding DataContext.HasSelection,
+                                   RelativeSource={RelativeSource AncestorType=Window},
+                                   Converter={StaticResource BoolToVisibility}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Account header card -->
+                    <Border Grid.Row="0" Style="{StaticResource Card}" Padding="18">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <Grid Width="46" Height="46" VerticalAlignment="Top">
+                                <Ellipse Fill="{StaticResource ElevatedBrush}"
+                                         Stroke="{StaticResource BorderStrongBrush}"
+                                         StrokeThickness="1" />
+                                <TextBlock Text="{Binding Initial}"
+                                           FontSize="19" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Grid>
+
+                            <StackPanel Grid.Column="1" Margin="14,0,16,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding DisplayName}" Style="{StaticResource TitleText}"
+                                               VerticalAlignment="Center" />
+                                    <Border Style="{StaticResource Pill}"
+                                            Background="{StaticResource SurfaceAltBrush}"
+                                            Margin="10,0,0,0"
+                                            VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse Width="7" Height="7" VerticalAlignment="Center"
+                                                     Fill="{Binding State, Converter={StaticResource StateToBrush}}" />
+                                            <TextBlock Text="{Binding StateText}"
+                                                       FontSize="12" FontWeight="SemiBold"
+                                                       Margin="7,0,0,0"
+                                                       Foreground="{Binding State, Converter={StaticResource StateToBrush}}" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+
+                                <TextBlock Text="{Binding StatusDetail}"
+                                           Style="{StaticResource SecondaryText}"
+                                           Margin="0,6,0,0" />
+
+                                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                    <Button Content="Запустить"
+                                            Style="{StaticResource PrimaryButton}"
+                                            MinWidth="112"
+                                            Command="{Binding StartCommand}"
+                                            Visibility="{Binding IsRunning, Converter={StaticResource InverseBoolToVisibility}}" />
+                                    <Button Content="Остановить"
+                                            Style="{StaticResource SecondaryButton}"
+                                            MinWidth="112"
+                                            Command="{Binding StopCommand}"
+                                            Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}}" />
+                                    <Button Content="Войти заново"
+                                            Margin="8,0,0,0"
+                                            Command="{Binding SignInCommand}">
+                                        <Button.Style>
+                                            <!-- Quietly available, but highlighted once the saved token dies. -->
+                                            <Style TargetType="Button" BasedOn="{StaticResource GhostButton}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding NeedsSignIn}" Value="True">
+                                                        <Setter Property="Background" Value="{StaticResource WarningSoftBrush}" />
+                                                        <Setter Property="Foreground" Value="{StaticResource WarningBrush}" />
+                                                        <Setter Property="BorderBrush" Value="Transparent" />
+                                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                    <Button Content="Журнал"
+                                            Style="{StaticResource GhostButton}"
+                                            Margin="8,0,0,0"
+                                            Command="{Binding ShowLogCommand}"
+                                            ToolTip="События этого аккаунта: входы, паузы, фарм карточек." />
+                                    <Button Content="Удалить"
+                                            Style="{StaticResource DangerButton}"
+                                            Margin="8,0,0,0"
+                                            Command="{Binding RemoveAccountCommand}" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2" HorizontalAlignment="Right">
+                                <TextBlock Text="{Binding SessionClockText}"
+                                           Style="{StaticResource ClockText}"
+                                           HorizontalAlignment="Right"
+                                           Foreground="{Binding State, Converter={StaticResource StateToBrush}}" />
+                                <TextBlock Style="{StaticResource MetricText}" HorizontalAlignment="Right" Margin="0,2,0,0"
+                                           ToolTip="Сколько наиграла эта программа за всё время, а не общее время в Steam.">
+                                    <Run Text="накручено всего" />
+                                    <Run Text="{Binding TotalBoostedText, Mode=OneWay}" FontWeight="SemiBold" />
+                                </TextBlock>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Per-account options -->
+                    <Border Grid.Row="1" Style="{StaticResource Card}" Padding="18,12" Margin="0,12,0,0">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBox VerticalAlignment="Center"
+                                         Margin="0,0,20,0"
+                                         Text="{Binding CustomStatus, UpdateSourceTrigger=LostFocus}"
+                                         Tag="Свой статус вместо названия игры (необязательно)"
+                                         ToolTip="Steam покажет этот текст вместо игры. Часы всё равно идут по отмеченным играм." />
+
+                                <CheckBox Grid.Column="1"
+                                          Style="{StaticResource ToggleSwitch}"
+                                          Content="Показывать онлайн"
+                                          MinWidth="200"
+                                          VerticalAlignment="Center"
+                                          IsChecked="{Binding ShowOnline}" />
+
+                                <CheckBox Grid.Column="2"
+                                          Style="{StaticResource ToggleSwitch}"
+                                          Content="Автозапуск"
+                                          MinWidth="150"
+                                          Margin="20,0,0,0"
+                                          VerticalAlignment="Center"
+                                          IsChecked="{Binding AutoStart}" />
+                            </Grid>
+
+                            <Rectangle Style="{StaticResource HairLine}" Margin="0,12,0,10" />
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <CheckBox Style="{StaticResource ToggleSwitch}"
+                                          Content="Расписание"
+                                          MinWidth="150"
+                                          VerticalAlignment="Center"
+                                          IsChecked="{Binding ScheduleEnabled}"
+                                          ToolTip="Накрутка идёт только внутри окна времени и не дольше дневного лимита." />
+
+                                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                            Margin="20,0,0,0" VerticalAlignment="Center"
+                                            IsEnabled="{Binding ScheduleEnabled}">
+                                    <TextBlock Text="с" Style="{StaticResource MetricText}" VerticalAlignment="Center" />
+                                    <TextBox Width="76" Margin="8,0,0,0" TextAlignment="Center" Padding="6,7"
+                                             Text="{Binding ScheduleStartText, UpdateSourceTrigger=LostFocus}" />
+                                    <TextBlock Text="до" Style="{StaticResource MetricText}"
+                                               VerticalAlignment="Center" Margin="10,0,0,0" />
+                                    <TextBox Width="76" Margin="8,0,0,0" TextAlignment="Center" Padding="6,7"
+                                             Text="{Binding ScheduleEndText, UpdateSourceTrigger=LostFocus}" />
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                            Margin="24,0,0,0" VerticalAlignment="Center"
+                                            IsEnabled="{Binding ScheduleEnabled}">
+                                    <TextBlock Text="не больше" Style="{StaticResource MetricText}" VerticalAlignment="Center" />
+                                    <TextBox Width="58" Margin="8,0,0,0" TextAlignment="Center" Padding="6,7"
+                                             Tag="—"
+                                             Text="{Binding DailyLimitText, UpdateSourceTrigger=LostFocus}"
+                                             ToolTip="Часов в сутки. Пусто — без ограничения." />
+                                    <TextBlock Text="ч/сутки" Style="{StaticResource MetricText}"
+                                               VerticalAlignment="Center" Margin="8,0,0,0" />
+                                </StackPanel>
+
+                                <TextBlock Grid.Column="3"
+                                           Text="{Binding ScheduleSummary}"
+                                           Style="{StaticResource MetricText}"
+                                           HorizontalAlignment="Right"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           Margin="20,0,0,0" />
+                            </Grid>
+
+                            <TextBlock Text="{Binding ScheduleHint}"
+                                       Style="{StaticResource MetricText}"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       Margin="0,8,0,0"
+                                       TextTrimming="CharacterEllipsis"
+                                       Visibility="{Binding ScheduleEnabled, Converter={StaticResource BoolToVisibility}}" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Games header -->
+                    <Grid Grid.Row="2" Margin="4,16,4,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Text="{Binding GamesHeader}"
+                                   Style="{StaticResource SectionHeaderText}"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
+                                   Margin="0,0,16,0" />
+
+                        <CheckBox Grid.Column="1"
+                                  Style="{StaticResource ToggleSwitch}"
+                                  Content="Фарм карточек"
+                                  MinWidth="170"
+                                  VerticalAlignment="Center"
+                                  IsChecked="{Binding FarmCards}"
+                                  ToolTip="Программа сама найдёт игры, где ещё падают карточки, и будет держать их запущенными. Отмеченные вручную игры при этом не используются." />
+
+                        <Button Grid.Column="2"
+                                Content="+ Добавить игры"
+                                Style="{StaticResource GhostButton}"
+                                Padding="10,4" MinHeight="26" FontSize="12"
+                                Margin="16,0,0,0"
+                                IsEnabled="{Binding FarmCards, Converter={StaticResource InverseBool}}"
+                                Command="{Binding AddGamesCommand}" />
+                    </Grid>
+
+                    <!-- Games -->
+                    <Grid Grid.Row="3">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Border Grid.Row="0"
+                                Background="{StaticResource WarningSoftBrush}"
+                                CornerRadius="6"
+                                Padding="12,8"
+                                Margin="0,0,0,10"
+                                Visibility="{Binding IsOverGameLimit, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="{Binding GameLimitWarning}"
+                                       Foreground="{StaticResource WarningBrush}"
+                                       TextWrapping="Wrap" />
+                        </Border>
+
+                        <Border Grid.Row="1" Style="{StaticResource InsetCard}" Padding="6" MinHeight="170">
+                            <Grid>
+                                <ListBox ItemsSource="{Binding Games}"
+                                         ItemContainerStyle="{StaticResource PlainListItem}"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="Transparent" Padding="8,6">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <Grid Width="92" Height="35">
+                                                        <Border CornerRadius="4" Background="{StaticResource ElevatedBrush}" />
+                                                        <TextBlock Text="{Binding AppId}"
+                                                                   Style="{StaticResource MetricText}"
+                                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                                   HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center" />
+                                                        <Border CornerRadius="4">
+                                                            <Border.Background>
+                                                                <ImageBrush Stretch="UniformToFill"
+                                                                            ImageSource="{Binding Capsule}" />
+                                                            </Border.Background>
+                                                        </Border>
+                                                    </Grid>
+
+                                                    <StackPanel Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Name}"
+                                                                   FontWeight="SemiBold"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Style="{StaticResource MetricText}" Margin="0,2,0,0"
+                                                                   Visibility="{Binding HasGoal, Converter={StaticResource InverseBoolToVisibility}}">
+                                                            <Run Text="AppID" />
+                                                            <Run Text="{Binding AppId, Mode=OneWay}" />
+                                                            <Run Text="·" Foreground="{StaticResource TextMutedBrush}" />
+                                                            <Run Text="{Binding SteamTotalText, Mode=OneWay}" />
+                                                        </TextBlock>
+
+                                                        <StackPanel Margin="0,4,0,0"
+                                                                    Visibility="{Binding HasGoal, Converter={StaticResource BoolToVisibility}}">
+                                                            <ProgressBar Style="{StaticResource ThinProgress}"
+                                                                         Value="{Binding GoalProgress, Mode=OneWay}"
+                                                                         MaxWidth="260"
+                                                                         HorizontalAlignment="Left" />
+                                                            <TextBlock Text="{Binding GoalProgressText}"
+                                                                       Style="{StaticResource MetricText}"
+                                                                       Margin="0,3,0,0" />
+                                                        </StackPanel>
+                                                    </StackPanel>
+
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                                                VerticalAlignment="Center" Margin="0,0,4,0">
+                                                        <TextBox Width="58" TextAlignment="Center" Padding="6,7"
+                                                                 Tag="цель"
+                                                                 Text="{Binding GoalText, UpdateSourceTrigger=LostFocus}"
+                                                                 ToolTip="Сколько часов накрутить, потом игра выключится сама. Пусто — без цели." />
+                                                        <TextBlock Text="ч" Style="{StaticResource MetricText}"
+                                                                   VerticalAlignment="Center" Margin="6,0,0,0" />
+                                                    </StackPanel>
+
+                                                    <StackPanel Grid.Column="3"
+                                                                MinWidth="82"
+                                                                VerticalAlignment="Center"
+                                                                ToolTip="Сколько наиграла эта программа. Steam засчитывает часы порциями, поэтому его счётчик догоняет не сразу.">
+                                                        <TextBlock Text="{Binding BoostedText}"
+                                                                   Style="{StaticResource MetricText}"
+                                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                                   TextAlignment="Right" />
+                                                        <TextBlock Text="накручено"
+                                                                   Style="{StaticResource MetricText}"
+                                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                                   FontSize="11"
+                                                                   TextAlignment="Right" />
+                                                    </StackPanel>
+
+                                                    <CheckBox Grid.Column="4"
+                                                              IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                                              VerticalAlignment="Center"
+                                                              Margin="16,0,4,0"
+                                                              ToolTip="Учитывать эту игру при накрутке" />
+
+                                                    <Button Grid.Column="5"
+                                                            Content="✕"
+                                                            Style="{StaticResource IconButton}"
+                                                            VerticalAlignment="Center"
+                                                            ToolTip="Убрать из списка"
+                                                            Command="{Binding DataContext.RemoveGameCommand,
+                                                                      RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                            CommandParameter="{Binding}" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                            Visibility="{Binding HasGames, Converter={StaticResource InverseBoolToVisibility}}">
+                                    <TextBlock Text="Игры не добавлены"
+                                               Style="{StaticResource SecondaryText}"
+                                               HorizontalAlignment="Center" />
+                                    <TextBlock Text="Нажмите «Добавить игры», чтобы выбрать из библиотеки"
+                                               Style="{StaticResource MetricText}"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               HorizontalAlignment="Center"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </Grid>
+
+                </Grid>
+            </Grid>
+        </Grid>
+
+        <!-- ==================================================== status bar -->
+        <Border Grid.Row="2"
+                Background="{StaticResource SidebarBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="20,0">
+            <Grid Height="30">
+                <TextBlock Text="{Binding StatusText}"
+                           Style="{StaticResource MetricText}"
+                           VerticalAlignment="Center" />
+                <TextBlock Text="Hourglass 1.0"
+                           Style="{StaticResource MetricText}"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

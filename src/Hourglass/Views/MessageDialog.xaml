@@ -1,0 +1,39 @@
+<Window x:Class="Hourglass.Views.MessageDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Style="{StaticResource AppWindow}"
+        Width="420"
+        SizeToContent="Height"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+    <Border Padding="24">
+        <StackPanel>
+            <TextBlock x:Name="TitleText"
+                       Style="{StaticResource TitleText}"
+                       TextWrapping="Wrap" />
+            <TextBlock x:Name="MessageText"
+                       Style="{StaticResource SecondaryText}"
+                       TextWrapping="Wrap"
+                       TextTrimming="None"
+                       Margin="0,10,0,0" />
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+                <Button x:Name="CancelButton"
+                        Content="Отмена"
+                        Style="{StaticResource GhostButton}"
+                        MinWidth="96"
+                        Margin="0,0,8,0"
+                        IsCancel="True"
+                        Click="OnCancelClick" />
+                <Button x:Name="ConfirmButton"
+                        Content="ОК"
+                        Style="{StaticResource PrimaryButton}"
+                        MinWidth="96"
+                        IsDefault="True"
+                        Click="OnConfirmClick" />
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</Window>

@@ -1,0 +1,25 @@
+<UserControl x:Class="Hourglass.Views.BrandMark"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             IsHitTestVisible="False"
+             Focusable="False">
+    <!-- Vector twin of the executable icon, so the header stays crisp at any DPI. -->
+    <Viewbox Stretch="Uniform">
+        <Canvas Width="32" Height="32">
+            <Path Fill="{StaticResource AccentBrush}"
+                  Data="M 8.1,6.4 L 23.9,6.4 L 16,15.4 Z" />
+            <Path Fill="{StaticResource AccentBrush}"
+                  Data="M 16,16.6 L 23.9,25.6 L 8.1,25.6 Z" />
+            <Path Fill="{StaticResource SandBrush}"
+                  Data="M 9.6,7.6 L 22.4,7.6 L 18.2,12.4 L 13.8,12.4 Z" />
+            <Path Fill="{StaticResource SandBrush}"
+                  Data="M 16,20.4 L 21.9,25.2 L 10.1,25.2 Z" />
+            <Rectangle Canvas.Left="15.5" Canvas.Top="14.8" Width="1" Height="6.2"
+                       Fill="{StaticResource SandBrush}" />
+            <Rectangle Canvas.Left="6.6" Canvas.Top="4" Width="18.8" Height="2.4"
+                       RadiusX="1.1" RadiusY="1.1" Fill="{StaticResource AccentBrush}" />
+            <Rectangle Canvas.Left="6.6" Canvas.Top="25.6" Width="18.8" Height="2.4"
+                       RadiusX="1.1" RadiusY="1.1" Fill="{StaticResource AccentBrush}" />
+        </Canvas>
+    </Viewbox>
+</UserControl>
