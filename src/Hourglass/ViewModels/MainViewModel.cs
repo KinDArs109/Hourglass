@@ -24,6 +24,7 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
     private readonly Dictionary<string, SessionState> _notifiedStates = new(StringComparer.OrdinalIgnoreCase);
     private readonly Func<string, SteamBoostSession> _sessionFactory;
     private readonly DispatcherTimer _timer;
+    private readonly DispatcherTimer _clockTimer;
 
     private static readonly TimeSpan StartStagger = TimeSpan.FromSeconds(3);
 
@@ -74,6 +75,15 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
             Interval = TimeSpan.FromSeconds(1)
         };
         _timer.Tick += OnTick;
+
+        // Counters advance once a second; the clock is redrawn five times as often so
+        // it never sits on a stale second long enough to skip one when the second hand
+        // rolls over between two ticks.
+        _clockTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(200)
+        };
+        _clockTimer.Tick += OnClockTick;
     }
 
     public ObservableCollection<AccountViewModel> Accounts { get; } = new();
@@ -163,6 +173,7 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
 
         _lastTickUtc = DateTime.UtcNow;
         _timer.Start();
+        _clockTimer.Start();
         UpdateStatus();
 
         AsyncHelper.FireAndForget(StartAutoStartAccountsAsync, nameof(StartAutoStartAccountsAsync));
@@ -242,6 +253,8 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
         _disposed = true;
         _timer.Stop();
         _timer.Tick -= OnTick;
+        _clockTimer.Stop();
+        _clockTimer.Tick -= OnClockTick;
         _logger.EntryWritten -= OnLogEntryWritten;
         Accounts.CollectionChanged -= OnAccountsChanged;
 
@@ -492,6 +505,12 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
     {
         foreach (var account in Accounts.Where(account => account.IsRunning).ToList())
             await account.StopAsync().ConfigureAwait(true);
+    }
+
+    private void OnClockTick(object? sender, EventArgs e)
+    {
+        foreach (var account in Accounts)
+            account.TickClock();
     }
 
     private void OnTick(object? sender, EventArgs e)

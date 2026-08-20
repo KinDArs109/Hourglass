@@ -33,6 +33,8 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
     private static readonly TimeSpan FarmRetryInterval = TimeSpan.FromMinutes(2);
 
     private double _pendingSeconds;
+    private IReadOnlyList<uint> _accruingTo = Array.Empty<uint>();
+    private HashSet<uint> _accruingIds = new();
     private IReadOnlyList<uint> _farmAppIds = Array.Empty<uint>();
     private string _farmStatus = "";
     private DateTime _nextFarmCheckUtc = DateTime.MinValue;
@@ -645,6 +647,17 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
         RaiseSessionProperties();
     }
 
+    /// <summary>
+    /// Redraws the session clock. Called several times a second, so the seconds change
+    /// on their real boundary: at one call per second the timer runs a hair late, the
+    /// lateness piles up, and every so often a whole second gets skipped on screen.
+    /// </summary>
+    public void TickClock()
+    {
+        if (_session.BoostingSinceUtc is not null)
+            OnPropertyChanged(nameof(SessionClockText));
+    }
+
     /// <summary>Called once per second by the shell to advance clocks and counters.</summary>
     public void Tick(double elapsedSeconds)
     {
@@ -660,9 +673,7 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
                 _config.BoostedSeconds += whole;
                 _config.DailySeconds += whole;
 
-                foreach (var game in Games.Where(game => game.IsEnabled))
-                    game.Accrue(whole);
-
+                AccrueToRunningGames(whole);
                 RetireGamesThatReachedTheirGoal();
 
                 OnPropertyChanged(nameof(TotalBoostedText));
@@ -682,6 +693,33 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
 
         if (FarmCards)
             AsyncHelper.FireAndForget(RefreshCardFarmAsync, $"CardFarm:{Username}");
+    }
+
+    /// <summary>
+    /// Credits the seconds to the games Steam is actually running, not to every ticked
+    /// row. They are the same list most of the time, but not while card farming: there
+    /// the ticked games sit idle, and crediting them would run their counters far ahead
+    /// of the hours Steam will ever hand out.
+    /// </summary>
+    private void AccrueToRunningGames(long seconds)
+    {
+        var running = _session.ActiveAppIds;
+
+        // The plan keeps the same list until it changes, so the set is rebuilt rarely.
+        if (!ReferenceEquals(_accruingTo, running))
+        {
+            _accruingTo = running;
+            _accruingIds = running.ToHashSet();
+        }
+
+        if (_accruingIds.Count == 0)
+            return;
+
+        foreach (var game in Games)
+        {
+            if (_accruingIds.Contains(game.AppId))
+                game.Accrue(seconds);
+        }
     }
 
     private void RollDailyCounter()

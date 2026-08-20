@@ -99,6 +99,15 @@ public sealed class SteamBoostSession : IDisposable
     public DateTime? BoostingSinceUtc { get; private set; }
 
     /// <summary>
+    /// The games Steam is being told about right now, empty when nothing is running.
+    /// This is what actually earns playtime, which is not always the ticked list: with
+    /// card farming on it is the farmer's picks, and a long list is cut to the limit.
+    /// </summary>
+    public IReadOnlyList<uint> ActiveAppIds => _isReportingGames && State == SessionState.Boosting
+        ? _plan.AppIds
+        : Array.Empty<uint>();
+
+    /// <summary>
     /// True between <see cref="Start"/> and the moment the state machine settles.
     /// Flipped before the final state change so the UI never sees "running" and
     /// a terminal state at the same time.
