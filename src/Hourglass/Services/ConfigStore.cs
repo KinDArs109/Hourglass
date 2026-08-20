@@ -99,6 +99,92 @@ public sealed class ConfigStore : IConfigStore, IDisposable
         }
     }
 
+    /// <summary>
+    /// Writes a copy of the settings for another machine or a rainy day. Sign-in tokens
+    /// are deliberately left out: Windows ties them to this user on this machine, so they
+    /// would be useless in the copy and are a secret not worth scattering into files.
+    /// </summary>
+    public bool Export(string path)
+    {
+        lock (_gate)
+        {
+            try
+            {
+                var copy = JsonSerializer.Deserialize<AppConfig>(
+                    JsonSerializer.Serialize(Config, SerializerOptions), SerializerOptions);
+
+                if (copy is null)
+                    return false;
+
+                foreach (var account in copy.Accounts)
+                {
+                    account.ProtectedRefreshToken = null;
+                    account.ProtectedGuardData = null;
+                    account.ProtectedProxy = null;
+                }
+
+                copy.Telegram.ProtectedToken = null;
+
+                File.WriteAllText(path, JsonSerializer.Serialize(copy, SerializerOptions));
+                _logger.Success(AppLogScopes.App, $"Копия настроек сохранена: {Path.GetFileName(path)}");
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+            {
+                _logger.Error(AppLogScopes.App, "Не удалось сохранить копию настроек", ex);
+                return false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Replaces the settings with the ones in the file. Sign-ins already on this machine
+    /// are carried across by login name, so restoring a copy does not log anything out.
+    /// </summary>
+    public bool Import(string path)
+    {
+        lock (_gate)
+        {
+            try
+            {
+                var incoming = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(path), SerializerOptions);
+
+                // A file with no accounts is either the wrong file or a broken one, and
+                // swallowing it would silently wipe everything.
+                if (incoming is null || incoming.Accounts.Count == 0)
+                    return false;
+
+                Normalize(incoming);
+
+                var known = Config.Accounts.ToDictionary(
+                    account => account.Username, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var account in incoming.Accounts)
+                {
+                    if (!known.TryGetValue(account.Username, out var existing))
+                        continue;
+
+                    account.ProtectedRefreshToken ??= existing.ProtectedRefreshToken;
+                    account.ProtectedGuardData ??= existing.ProtectedGuardData;
+                    account.ProtectedProxy ??= existing.ProtectedProxy;
+                }
+
+                incoming.Telegram.ProtectedToken ??= Config.Telegram.ProtectedToken;
+
+                // Left unsaved on purpose: the caller has to stop the sessions and swap
+                // the account list over first, and only then is the new state worth
+                // writing down.
+                Config = incoming;
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+            {
+                _logger.Error(AppLogScopes.App, $"Не удалось прочитать {Path.GetFileName(path)}", ex);
+                return false;
+            }
+        }
+    }
+
     public void SaveDeferred()
     {
         if (_deferredTimer.Enabled)

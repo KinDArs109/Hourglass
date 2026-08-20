@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading.Channels;
 using Hourglass.Models;
@@ -36,11 +37,13 @@ public sealed class SteamBoostSession : IDisposable
 
     private readonly IAppLogger _logger;
     private readonly SteamClientWatcher _watcher;
-    private readonly SteamClient _client;
-    private readonly CallbackManager _callbacks;
-    private readonly SteamUser _steamUser;
-    private readonly SteamFriends _steamFriends;
     private readonly List<IDisposable> _subscriptions = new();
+
+    private SteamConfiguration _configuration;
+    private SteamClient _client;
+    private CallbackManager _callbacks;
+    private SteamUser _steamUser;
+    private SteamFriends _steamFriends;
     private readonly Channel<SessionEvent> _events =
         Channel.CreateUnbounded<SessionEvent>(new UnboundedChannelOptions { SingleReader = true });
 
@@ -64,10 +67,22 @@ public sealed class SteamBoostSession : IDisposable
         Username = username;
         _logger = logger;
         _watcher = watcher;
+        _configuration = configuration;
 
+        BuildClient();
+    }
+
+    /// <summary>
+    /// Builds the Steam client and wires the callbacks it raises. Split out of the
+    /// constructor because the client is bound to one configuration for life, and an
+    /// account that gains or loses a proxy needs a different one.
+    /// </summary>
+    [MemberNotNull(nameof(_client), nameof(_callbacks), nameof(_steamUser), nameof(_steamFriends))]
+    private void BuildClient()
+    {
         // The identifier only shows up in SteamKit's own debug output, but it makes a
         // two-account log readable when something goes wrong.
-        _client = new SteamClient(configuration, username);
+        _client = new SteamClient(_configuration, Username);
         _callbacks = new CallbackManager(_client);
         _steamUser = _client.GetHandler<SteamUser>()
                      ?? throw new InvalidOperationException("SteamUser handler is unavailable.");
@@ -120,7 +135,7 @@ public sealed class SteamBoostSession : IDisposable
     public event EventHandler<ulong>? SteamIdResolved;
     public event EventHandler? TokenRejected;
 
-    public void Start(string refreshToken, BoostPlan plan)
+    public void Start(string refreshToken, BoostPlan plan, SteamConfiguration configuration)
     {
         lock (_lifecycleGate)
         {
@@ -128,6 +143,18 @@ public sealed class SteamBoostSession : IDisposable
 
             if (_isRunning)
                 return;
+
+            // Safe here and nowhere else: nothing is running, so no callback is in
+            // flight against the client that is about to be replaced.
+            if (!ReferenceEquals(_configuration, configuration))
+            {
+                foreach (var subscription in _subscriptions)
+                    subscription.Dispose();
+
+                _subscriptions.Clear();
+                _configuration = configuration;
+                BuildClient();
+            }
 
             _isRunning = true;
             _refreshToken = refreshToken;

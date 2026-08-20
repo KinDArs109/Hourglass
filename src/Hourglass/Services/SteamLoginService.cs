@@ -41,10 +41,11 @@ public sealed class SteamLoginService
         string username,
         string password,
         string? guardData,
+        Uri? proxy,
         IAuthenticator authenticator,
         CancellationToken cancellationToken)
     {
-        var client = new SteamClient(_runtime.Configuration, username);
+        var client = new SteamClient(_runtime.ResolveFor(username, proxy), username);
         var callbacks = new CallbackManager(client);
         var steamUser = client.GetHandler<SteamUser>()
                         ?? throw new InvalidOperationException("SteamUser handler is unavailable.");

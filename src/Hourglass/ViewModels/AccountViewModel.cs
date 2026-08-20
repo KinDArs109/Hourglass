@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Windows.Input;
 using Hourglass.Models;
 using Hourglass.Services;
@@ -15,6 +16,14 @@ public enum StopReason
     CardsFinished
 }
 
+/// <summary>Which page of the account pane is on screen.</summary>
+public enum AccountTab
+{
+    Games,
+    Farm,
+    History
+}
+
 public sealed class AccountViewModel : ViewModelBase, IDisposable
 {
     private const int MaxLogEntries = 250;
@@ -25,6 +34,7 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
     private readonly IAppLogger _logger;
     private readonly IDialogService _dialogs;
     private readonly CardFarmService _cardFarm;
+    private readonly SteamRuntime _runtime;
     private readonly Func<bool> _pauseWhenClientRuns;
 
     private static readonly TimeSpan FarmCheckInterval = TimeSpan.FromMinutes(12);
@@ -32,17 +42,31 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
     /// <summary>Back-off after a failed badge read, so a broken token cannot spin.</summary>
     private static readonly TimeSpan FarmRetryInterval = TimeSpan.FromMinutes(2);
 
+    /// <summary>Days drawn on the history page.</summary>
+    private const int HistoryDays = 30;
+
+    private const string DayFormat = "yyyy-MM-dd";
+
+    /// <summary>How often the open history page redraws so today's column grows.</summary>
+    private static readonly TimeSpan HistoryRefreshInterval = TimeSpan.FromSeconds(30);
+
     private double _pendingSeconds;
     private IReadOnlyList<uint> _accruingTo = Array.Empty<uint>();
     private HashSet<uint> _accruingIds = new();
     private IReadOnlyList<uint> _farmAppIds = Array.Empty<uint>();
     private string _farmStatus = "";
+    private bool _showFarmNotice;
     private DateTime _nextFarmCheckUtc = DateTime.MinValue;
     private bool _isRefreshingFarm;
-    private bool _isFarmTab;
+    private AccountTab _tab;
+    private DateTime _nextHistoryRefreshUtc;
     private DateTime? _scheduleSuppressedUntil;
     private string _scheduleHint = "";
     private bool _isApplyingSchedule;
+    private string _proxyText;
+    private string _proxyStatus = "";
+    private bool _isProxyStatusBad;
+    private bool _isCheckingProxy;
     private bool _disposed;
 
     public AccountViewModel(
@@ -53,6 +77,7 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
         IDialogService dialogs,
         CapsuleCache capsules,
         CardFarmService cardFarm,
+        SteamRuntime runtime,
         Func<bool> pauseWhenClientRuns)
     {
         _config = config;
@@ -62,7 +87,10 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
         _dialogs = dialogs;
         Capsules = capsules;
         _cardFarm = cardFarm;
+        _runtime = runtime;
         _pauseWhenClientRuns = pauseWhenClientRuns;
+
+        _proxyText = SecretProtector.Unprotect(config.ProtectedProxy) ?? "";
 
         Games = new ObservableCollection<GameViewModel>(
             config.Games.Select(game => new GameViewModel(game, capsules, OnGameToggled)));
@@ -81,6 +109,8 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
         RefreshFarmCommand = new AsyncRelayCommand(_ => RefreshFarmNowAsync(), _ => FarmCards && !_isRefreshingFarm);
         RemoveAccountCommand = new RelayCommand(_ => RemoveRequested?.Invoke(this, EventArgs.Empty));
         ShowLogCommand = new RelayCommand(_ => _dialogs.ShowLog(this));
+        TestProxyCommand = new AsyncRelayCommand(_ => TestProxyAsync(), _ => !_isCheckingProxy);
+        ShowProxyCommand = new RelayCommand(_ => _dialogs.ShowProxy(this));
     }
 
     public event EventHandler? RemoveRequested;
@@ -107,6 +137,8 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
     public ICommand RefreshFarmCommand { get; }
     public ICommand RemoveAccountCommand { get; }
     public ICommand ShowLogCommand { get; }
+    public ICommand TestProxyCommand { get; }
+    public ICommand ShowProxyCommand { get; }
 
     public string DisplayName => string.IsNullOrWhiteSpace(_config.DisplayName)
         ? _config.Username
@@ -164,6 +196,21 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
         : $"Игры · выбрано {ActiveGameCount} из {Games.Count}";
 
     public bool HasGames => Games.Count > 0;
+
+    /// <summary>
+    /// Set while the card farmer is idling its own games and the ticked ones are only
+    /// waiting. The list says so above itself, so a counter standing still next to a
+    /// ticked box reads as "not its turn" rather than "broken".
+    /// </summary>
+    public bool ShowFarmNotice
+    {
+        get => _showFarmNotice;
+        private set => SetProperty(ref _showFarmNotice, value);
+    }
+
+    public string FarmNotice =>
+        "Идёт фарм карточек, часы получают его игры. Отмеченные здесь ждут своей " +
+        "очереди — что крутится сейчас, видно на вкладке «Фарм карточек».";
 
     public bool IsOverGameLimit => ActiveGameCount > BoostPlan.MaxGames;
 
@@ -232,27 +279,123 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
         ? "Список появится после первого чтения значков"
         : $"{Plural.Games(FarmGames.Count)} с карточками · всего {FarmGames.Sum(game => game.DropsRemaining)} шт.";
 
-    /// <summary>Which half of the account pane is on screen.</summary>
+    // ------------------------------------------------------------- history
+
+    /// <summary>The last month as chart columns, oldest first.</summary>
+    public ObservableCollection<DayBarViewModel> History { get; } = new();
+
+    public bool HasHistory => History.Any(day => day.HasTime);
+
+    public string HistoryWeekText =>
+        TimeFormat.Compact(TimeSpan.FromSeconds(History.TakeLast(7).Sum(day => day.Seconds)));
+
+    public string HistoryMonthText =>
+        TimeFormat.Compact(TimeSpan.FromSeconds(History.Sum(day => day.Seconds)));
+
+    /// <summary>Averaged over the days that had any boosting, not over the empty ones.</summary>
+    public string HistoryAverageText
+    {
+        get
+        {
+            var busy = History.Where(day => day.HasTime).ToList();
+            return busy.Count == 0
+                ? "—"
+                : TimeFormat.Compact(TimeSpan.FromSeconds(busy.Sum(day => day.Seconds) / busy.Count));
+        }
+    }
+
+    /// <summary>Says what the average is averaged over, so it cannot be misread.</summary>
+    public string HistoryAverageCaption => History.Count(day => day.HasTime) is var busy && busy > 0
+        ? $"в среднем за день · таких дней {busy}"
+        : "в среднем за день с накруткой";
+
+    /// <summary>
+    /// Rebuilds the chart from the stored days plus today, which is still running. Days
+    /// with nothing on them are drawn as gaps, so the columns line up with the calendar
+    /// instead of quietly closing ranks.
+    /// </summary>
+    private void RebuildHistory()
+    {
+        _nextHistoryRefreshUtc = DateTime.UtcNow + HistoryRefreshInterval;
+
+        var byDate = new Dictionary<DateTime, long>();
+        foreach (var day in _config.History)
+        {
+            if (DateTime.TryParseExact(day.Date, DayFormat, CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out var parsed))
+                byDate[parsed.Date] = day.Seconds;
+        }
+
+        var today = DateTime.Now.Date;
+        if (_config.DailyDate == today.ToString(DayFormat) && _config.DailySeconds > 0)
+            byDate[today] = _config.DailySeconds;
+
+        var days = new List<(DateTime Date, long Seconds)>(HistoryDays);
+        for (var offset = HistoryDays - 1; offset >= 0; offset--)
+        {
+            var date = today.AddDays(-offset);
+            days.Add((date, byDate.TryGetValue(date, out var seconds) ? seconds : 0));
+        }
+
+        var peak = days.Max(day => day.Seconds);
+
+        History.Clear();
+        foreach (var day in days)
+            History.Add(new DayBarViewModel(day.Date, day.Seconds, peak, day.Date == today));
+
+        OnPropertyChanged(nameof(HasHistory));
+        OnPropertyChanged(nameof(HistoryWeekText));
+        OnPropertyChanged(nameof(HistoryMonthText));
+        OnPropertyChanged(nameof(HistoryAverageText));
+        OnPropertyChanged(nameof(HistoryAverageCaption));
+    }
+
+    /// <summary>
+    /// Which page of the account pane is on screen. Three bound booleans instead of one
+    /// enum because the tabs are radio buttons, and that is what they bind to.
+    /// </summary>
     public bool IsGamesTab
     {
-        get => !_isFarmTab;
+        get => _tab == AccountTab.Games;
         set
         {
             if (value)
-                IsFarmTab = false;
+                SelectTab(AccountTab.Games);
         }
     }
 
     public bool IsFarmTab
     {
-        get => _isFarmTab;
+        get => _tab == AccountTab.Farm;
         set
         {
-            if (!SetProperty(ref _isFarmTab, value))
-                return;
-
-            OnPropertyChanged(nameof(IsGamesTab));
+            if (value)
+                SelectTab(AccountTab.Farm);
         }
+    }
+
+    public bool IsHistoryTab
+    {
+        get => _tab == AccountTab.History;
+        set
+        {
+            if (value)
+                SelectTab(AccountTab.History);
+        }
+    }
+
+    private void SelectTab(AccountTab tab)
+    {
+        if (_tab == tab)
+            return;
+
+        _tab = tab;
+        OnPropertyChanged(nameof(IsGamesTab));
+        OnPropertyChanged(nameof(IsFarmTab));
+        OnPropertyChanged(nameof(IsHistoryTab));
+
+        if (tab == AccountTab.History)
+            RebuildHistory();
     }
 
     /// <summary>Re-reads the badge pages right now instead of waiting out the interval.</summary>
@@ -423,6 +566,99 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
         }
     }
 
+    // ----------------------------------------------------------------- proxy
+
+    /// <summary>
+    /// Where this account reaches Steam through. Empty means straight out, the same way
+    /// as everything else on the machine.
+    /// </summary>
+    public string ProxyText
+    {
+        get => _proxyText;
+        set
+        {
+            var trimmed = value.Trim();
+            if (_proxyText == trimmed)
+                return;
+
+            if (!ProxyAddress.TryParse(trimmed, out _, out var error))
+            {
+                // Bounces the box back to the stored address rather than keeping
+                // something the account could never connect through.
+                SetProxyStatus(error, isBad: true);
+                OnPropertyChanged();
+                return;
+            }
+
+            _proxyText = trimmed;
+            _config.ProtectedProxy = trimmed.Length == 0 ? null : SecretProtector.Protect(trimmed);
+            _store.Save();
+
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasProxy));
+            OnPropertyChanged(nameof(ProxyButtonText));
+
+            SetProxyStatus(
+                trimmed.Length == 0
+                    ? "Прокси убран — аккаунт пойдёт напрямую. Применится при следующем запуске."
+                    : "Сохранено. Применится при следующем запуске аккаунта.",
+                isBad: false);
+        }
+    }
+
+    public bool HasProxy => _proxyText.Length > 0;
+
+    /// <summary>The button says so when the account is not going straight out.</summary>
+    public string ProxyButtonText => HasProxy ? "Прокси · вкл" : "Прокси";
+
+    public string ProxyStatus => _proxyStatus;
+
+    public bool IsProxyStatusBad => _isProxyStatusBad;
+
+    public bool HasProxyStatus => _proxyStatus.Length > 0;
+
+    private Uri? ProxyUri => ProxyAddress.TryParse(_proxyText, out var uri, out _) ? uri : null;
+
+    private async Task TestProxyAsync()
+    {
+        if (!ProxyAddress.TryParse(_proxyText, out var uri, out var error))
+        {
+            SetProxyStatus(error, isBad: true);
+            return;
+        }
+
+        if (uri is null)
+        {
+            SetProxyStatus("Адрес не указан — аккаунт идёт напрямую", isBad: false);
+            return;
+        }
+
+        _isCheckingProxy = true;
+        System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+        SetProxyStatus("Проверяем…", isBad: false);
+
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+            var result = await ProxyCheck.RunAsync(uri, timeout.Token).ConfigureAwait(true);
+            SetProxyStatus(result.Message, !result.IsWorking);
+        }
+        finally
+        {
+            _isCheckingProxy = false;
+            System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+        }
+    }
+
+    private void SetProxyStatus(string message, bool isBad)
+    {
+        _proxyStatus = message;
+        _isProxyStatusBad = isBad;
+        OnPropertyChanged(nameof(ProxyStatus));
+        OnPropertyChanged(nameof(IsProxyStatusBad));
+        OnPropertyChanged(nameof(HasProxyStatus));
+    }
+
     // ------------------------------------------------------------- lifecycle
 
     public Task StartAsync() => StartAsync(silent: false);
@@ -453,13 +689,17 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        var proxy = ProxyUri;
+
         if (!silent)
         {
             _scheduleSuppressedUntil = null;
-            _logger.Info(Username, "Запуск сессии");
+            _logger.Info(Username, proxy is null
+                ? "Запуск сессии"
+                : $"Запуск сессии через прокси {ProxyAddress.Describe(proxy)}");
         }
 
-        _session.Start(token, BuildPlan());
+        _session.Start(token, BuildPlan(), _runtime.ResolveFor(Username, proxy));
         RaiseSessionProperties();
     }
 
@@ -623,7 +863,7 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
     public async Task SignInAsync()
     {
         var result = await _dialogs
-            .ShowLoginAsync(_config.Username, SecretProtector.Unprotect(_config.ProtectedGuardData))
+            .ShowLoginAsync(_config.Username, SecretProtector.Unprotect(_config.ProtectedGuardData), ProxyUri)
             .ConfigureAwait(true);
 
         if (result is null)
@@ -662,6 +902,7 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
     public void Tick(double elapsedSeconds)
     {
         RollDailyCounter();
+        RefreshRunningGames();
 
         if (_session.State == SessionState.Boosting)
         {
@@ -691,17 +932,20 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
         if (_session.NextRetryUtc is not null)
             OnPropertyChanged(nameof(StatusDetail));
 
+        if (IsHistoryTab && DateTime.UtcNow >= _nextHistoryRefreshUtc)
+            RebuildHistory();
+
         if (FarmCards)
             AsyncHelper.FireAndForget(RefreshCardFarmAsync, $"CardFarm:{Username}");
     }
 
     /// <summary>
-    /// Credits the seconds to the games Steam is actually running, not to every ticked
-    /// row. They are the same list most of the time, but not while card farming: there
-    /// the ticked games sit idle, and crediting them would run their counters far ahead
-    /// of the hours Steam will ever hand out.
+    /// Works out which of the listed games Steam is actually running and marks the rest
+    /// as waiting. They are the same list most of the time, but not while card farming:
+    /// there the ticked games sit idle, and a row whose counter never moves has to say
+    /// why instead of looking broken.
     /// </summary>
-    private void AccrueToRunningGames(long seconds)
+    private void RefreshRunningGames()
     {
         var running = _session.ActiveAppIds;
 
@@ -712,6 +956,25 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
             _accruingIds = running.ToHashSet();
         }
 
+        var boosting = _session.State == SessionState.Boosting;
+        var waiting = 0;
+
+        foreach (var game in Games)
+        {
+            game.IsWaiting = boosting && game.IsEnabled && !_accruingIds.Contains(game.AppId);
+            if (game.IsWaiting)
+                waiting++;
+        }
+
+        ShowFarmNotice = FarmCards && waiting > 0;
+    }
+
+    /// <summary>
+    /// Credits the seconds to the games Steam was actually told about. Crediting the
+    /// rest would run their counters far ahead of the hours Steam will ever hand out.
+    /// </summary>
+    private void AccrueToRunningGames(long seconds)
+    {
         if (_accruingIds.Count == 0)
             return;
 
@@ -724,15 +987,55 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
 
     private void RollDailyCounter()
     {
-        var today = DateTime.Now.ToString("yyyy-MM-dd");
+        var today = DateTime.Now.ToString(DayFormat);
         if (_config.DailyDate == today)
             return;
+
+        ArchiveFinishedDay();
 
         _config.DailyDate = today;
         _config.DailySeconds = 0;
         _scheduleSuppressedUntil = null;
         OnPropertyChanged(nameof(ScheduleSummary));
         _store.SaveDeferred();
+    }
+
+    /// <summary>
+    /// Files the day that just ended into the history. Days with nothing on the clock
+    /// are skipped — the chart draws its own gaps, and empty rows would only pile up in
+    /// the config file.
+    /// </summary>
+    private void ArchiveFinishedDay()
+    {
+        if (_config.DailySeconds <= 0 || string.IsNullOrEmpty(_config.DailyDate))
+            return;
+
+        var existing = _config.History.FirstOrDefault(day => day.Date == _config.DailyDate);
+        if (existing is not null)
+            existing.Seconds = Math.Max(existing.Seconds, _config.DailySeconds);
+        else
+            _config.History.Add(new DayStat { Date = _config.DailyDate, Seconds = _config.DailySeconds });
+
+        // Somewhat over a year is plenty for a month-wide chart and keeps the file small.
+        const int keepDays = 400;
+        if (_config.History.Count > keepDays)
+            _config.History.RemoveRange(0, _config.History.Count - keepDays);
+    }
+
+    /// <summary>Zeroes every clock this account keeps. Games and settings stay put.</summary>
+    public void ResetCounters()
+    {
+        _config.BoostedSeconds = 0;
+        _config.DailySeconds = 0;
+        _config.History.Clear();
+        _pendingSeconds = 0;
+
+        foreach (var game in Games)
+            game.ResetCounter();
+
+        RebuildHistory();
+        OnPropertyChanged(nameof(TotalBoostedText));
+        OnPropertyChanged(nameof(ScheduleSummary));
     }
 
     /// <summary>Unticks any game that has reached its hour goal, so the rest keep going.</summary>

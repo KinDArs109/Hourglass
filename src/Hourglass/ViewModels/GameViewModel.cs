@@ -11,6 +11,7 @@ public sealed class GameViewModel : ViewModelBase
     private readonly Action _onChanged;
 
     private ImageSource? _capsule;
+    private bool _isWaiting;
 
     public GameViewModel(GameConfig config, CapsuleCache capsules, Action onChanged)
     {
@@ -53,6 +54,23 @@ public sealed class GameViewModel : ViewModelBase
     }
 
     public string BoostedText => TimeFormat.Compact(TimeSpan.FromSeconds(_config.BoostedSeconds));
+
+    /// <summary>
+    /// True when the account is boosting but Steam was not told about this game — it
+    /// happens while card farming runs its own picks. Without saying so, a counter
+    /// standing still next to a ticked box just looks broken.
+    /// </summary>
+    public bool IsWaiting
+    {
+        get => _isWaiting;
+        set
+        {
+            if (SetProperty(ref _isWaiting, value))
+                OnPropertyChanged(nameof(BoostedCaption));
+        }
+    }
+
+    public string BoostedCaption => IsWaiting ? "ждёт очереди" : "накручено";
 
     /// <summary>What Steam itself counted, as of the last sign-in.</summary>
     public string SteamTotalText => _config.SteamMinutes > 0
@@ -104,6 +122,17 @@ public sealed class GameViewModel : ViewModelBase
     public string GoalProgressText => HasGoal
         ? $"{TimeFormat.Compact(TimeSpan.FromSeconds(_config.BoostedSeconds))} из {_config.GoalHours} ч"
         : "";
+
+    /// <summary>Back to zero. Steam's own figure is left alone — it is not ours to reset.</summary>
+    public void ResetCounter()
+    {
+        if (_config.BoostedSeconds == 0)
+            return;
+
+        _config.BoostedSeconds = 0;
+        OnPropertyChanged(nameof(BoostedText));
+        RaiseGoalProperties();
+    }
 
     public void Accrue(long seconds)
     {

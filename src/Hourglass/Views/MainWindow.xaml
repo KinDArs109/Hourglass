@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:Hourglass.Views"
         xmlns:converters="clr-namespace:Hourglass.Converters"
+        xmlns:vm="clr-namespace:Hourglass.ViewModels"
         Style="{StaticResource AppWindow}"
         Title="Hourglass"
         Width="1140" Height="770"
@@ -281,6 +282,11 @@
                                             Margin="8,0,0,0"
                                             Command="{Binding ShowLogCommand}"
                                             ToolTip="События этого аккаунта: входы, паузы, фарм карточек." />
+                                    <Button Content="{Binding ProxyButtonText}"
+                                            Style="{StaticResource GhostButton}"
+                                            Margin="8,0,0,0"
+                                            Command="{Binding ShowProxyCommand}"
+                                            ToolTip="Через какой адрес этот аккаунт ходит в Steam." />
                                     <Button Content="Удалить"
                                             Style="{StaticResource DangerButton}"
                                             Margin="8,0,0,0"
@@ -390,6 +396,7 @@
                                        Margin="0,8,0,0"
                                        TextTrimming="CharacterEllipsis"
                                        Visibility="{Binding ScheduleEnabled, Converter={StaticResource BoolToVisibility}}" />
+
                         </StackPanel>
                     </Border>
 
@@ -410,6 +417,10 @@
                                              Content="Фарм карточек"
                                              GroupName="AccountPane"
                                              IsChecked="{Binding IsFarmTab, Mode=TwoWay}" />
+                                <RadioButton Style="{StaticResource Segment}"
+                                             Content="История"
+                                             GroupName="AccountPane"
+                                             IsChecked="{Binding IsHistoryTab, Mode=TwoWay}" />
                             </StackPanel>
                         </Border>
 
@@ -430,16 +441,27 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <Border Grid.Row="0"
-                                Background="{StaticResource WarningSoftBrush}"
-                                CornerRadius="6"
-                                Padding="12,8"
-                                Margin="0,0,0,10"
-                                Visibility="{Binding IsOverGameLimit, Converter={StaticResource BoolToVisibility}}">
-                            <TextBlock Text="{Binding GameLimitWarning}"
-                                       Foreground="{StaticResource WarningBrush}"
-                                       TextWrapping="Wrap" />
-                        </Border>
+                        <StackPanel Grid.Row="0">
+                            <Border Background="{StaticResource WarningSoftBrush}"
+                                    CornerRadius="6"
+                                    Padding="12,8"
+                                    Margin="0,0,0,10"
+                                    Visibility="{Binding IsOverGameLimit, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="{Binding GameLimitWarning}"
+                                           Foreground="{StaticResource WarningBrush}"
+                                           TextWrapping="Wrap" />
+                            </Border>
+
+                            <Border Background="{StaticResource AccentSoftBrush}"
+                                    CornerRadius="6"
+                                    Padding="12,8"
+                                    Margin="0,0,0,10"
+                                    Visibility="{Binding ShowFarmNotice, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="{Binding FarmNotice}"
+                                           Foreground="{StaticResource AccentBrush}"
+                                           TextWrapping="Wrap" />
+                            </Border>
+                        </StackPanel>
 
                         <Border Grid.Row="1" Style="{StaticResource InsetCard}" Padding="6" MinHeight="170">
                             <Grid>
@@ -516,7 +538,7 @@
                                                                    Style="{StaticResource MetricText}"
                                                                    Foreground="{StaticResource TextPrimaryBrush}"
                                                                    TextAlignment="Right" />
-                                                        <TextBlock Text="накручено"
+                                                        <TextBlock Text="{Binding BoostedCaption}"
                                                                    Style="{StaticResource MetricText}"
                                                                    Foreground="{StaticResource TextMutedBrush}"
                                                                    FontSize="11"
@@ -712,6 +734,118 @@
                         </Border>
                     </Grid>
 
+                    <!-- History -->
+                    <Grid Grid.Row="3"
+                          Visibility="{Binding IsHistoryTab, Converter={StaticResource BoolToVisibility}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Border Grid.Row="0" Style="{StaticResource Card}" Padding="18,14" Margin="0,0,0,10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel>
+                                    <TextBlock Text="{Binding HistoryWeekText}" Style="{StaticResource ClockText}" FontSize="24" />
+                                    <TextBlock Text="за последние 7 дней" Style="{StaticResource MetricText}" Margin="0,2,0,0" />
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="{Binding HistoryMonthText}" Style="{StaticResource ClockText}" FontSize="24" />
+                                    <TextBlock Text="за 30 дней" Style="{StaticResource MetricText}" Margin="0,2,0,0" />
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="{Binding HistoryAverageText}" Style="{StaticResource ClockText}" FontSize="24" />
+                                    <TextBlock Text="{Binding HistoryAverageCaption}" Style="{StaticResource MetricText}"
+                                               TextWrapping="Wrap" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Row="1" Style="{StaticResource InsetCard}" Padding="18,16" MinHeight="140">
+                            <Grid>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel VerticalAlignment="Top">
+                                    <ItemsControl ItemsSource="{Binding History}"
+                                                  Height="{x:Static vm:DayBarViewModel.ChartHeight}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <UniformGrid Rows="1" VerticalAlignment="Bottom" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="2,0" VerticalAlignment="Bottom" ToolTip="{Binding Tooltip}">
+                                                    <!-- The full-height ghost keeps the hover target the whole column -->
+                                                    <Rectangle Fill="Transparent"
+                                                               Height="{x:Static vm:DayBarViewModel.ChartHeight}"
+                                                               VerticalAlignment="Bottom" />
+                                                    <Border Height="{Binding Height}"
+                                                            VerticalAlignment="Bottom"
+                                                            CornerRadius="3">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsToday}" Value="True">
+                                                                        <Setter Property="Background" Value="{StaticResource SuccessBrush}" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                    </Border>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <Rectangle Style="{StaticResource HairLine}" Margin="0,6,0,6" />
+
+                                    <ItemsControl ItemsSource="{Binding History}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <UniformGrid Rows="1" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding DayLabel}"
+                                                           FontSize="10"
+                                                           TextAlignment="Center">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock" BasedOn="{StaticResource MetricText}">
+                                                            <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsToday}" Value="True">
+                                                                    <Setter Property="Foreground" Value="{StaticResource SuccessBrush}" />
+                                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                </StackPanel>
+                                </ScrollViewer>
+
+                                <TextBlock Text="Пока нечего показать — история появится за первый же день накрутки"
+                                           Style="{StaticResource SecondaryText}"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Visibility="{Binding HasHistory, Converter={StaticResource InverseBoolToVisibility}}" />
+                            </Grid>
+                        </Border>
+                    </Grid>
+
                 </Grid>
             </Grid>
         </Grid>
@@ -726,7 +860,7 @@
                 <TextBlock Text="{Binding StatusText}"
                            Style="{StaticResource MetricText}"
                            VerticalAlignment="Center" />
-                <TextBlock Text="Hourglass 1.0"
+                <TextBlock Text="{Binding VersionText}"
                            Style="{StaticResource MetricText}"
                            Foreground="{StaticResource TextMutedBrush}"
                            HorizontalAlignment="Right"

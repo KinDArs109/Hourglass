@@ -9,7 +9,7 @@ using Hourglass.Utilities;
 
 namespace Hourglass.ViewModels;
 
-public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
+public sealed class MainViewModel : ViewModelBase, IBoostController, IAccountDataManager, IDisposable
 {
     private readonly IConfigStore _store;
     private readonly IAppLogger _logger;
@@ -21,6 +21,7 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
     private readonly AutoStartService _autoStart;
     private readonly TelegramBotService _telegram;
     private readonly UpdateService _updates;
+    private readonly SteamRuntime _runtime;
     private readonly Dictionary<string, SessionState> _notifiedStates = new(StringComparer.OrdinalIgnoreCase);
     private readonly Func<string, SteamBoostSession> _sessionFactory;
     private readonly DispatcherTimer _timer;
@@ -44,6 +45,7 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
         AutoStartService autoStart,
         TelegramBotService telegram,
         UpdateService updates,
+        SteamRuntime runtime,
         Func<string, SteamBoostSession> sessionFactory)
     {
         _store = store;
@@ -56,10 +58,11 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
         _autoStart = autoStart;
         _telegram = telegram;
         _updates = updates;
+        _runtime = runtime;
         _sessionFactory = sessionFactory;
 
         AddAccountCommand = new AsyncRelayCommand(_ => AddAccountAsync());
-        OpenSettingsCommand = new RelayCommand(_ => _dialogs.ShowSettings(this));
+        OpenSettingsCommand = new RelayCommand(_ => _dialogs.ShowSettings(this, this));
         OpenUpdateCommand = new RelayCommand(_ => OfferUpdate(), _ => HasUpdate);
         StartAllCommand = new AsyncRelayCommand(_ => StartAllAsync(), _ => Accounts.Any(a => !a.IsRunning));
         StopAllCommand = new AsyncRelayCommand(_ => StopAllAsync(), _ => Accounts.Any(a => a.IsRunning));
@@ -87,6 +90,9 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
     }
 
     public ObservableCollection<AccountViewModel> Accounts { get; } = new();
+
+    /// <summary>What the status bar shows. Read from the build, never typed by hand.</summary>
+    public string VersionText => $"{AppPaths.ProductName} {UpdateService.CurrentVersionText}";
 
     public ICommand AddAccountCommand { get; }
     public ICommand OpenSettingsCommand { get; }
@@ -406,7 +412,7 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
     {
         var session = _sessionFactory(config.Username);
         var account = new AccountViewModel(
-            config, session, _store, _logger, _dialogs, _capsules, _cardFarm,
+            config, session, _store, _logger, _dialogs, _capsules, _cardFarm, _runtime,
             () => _store.Config.PauseWhenSteamClientRuns);
 
         account.RemoveRequested += OnAccountRemoveRequested;
@@ -420,7 +426,7 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
 
     private async Task AddAccountAsync()
     {
-        var result = await _dialogs.ShowLoginAsync(null, null).ConfigureAwait(true);
+        var result = await _dialogs.ShowLoginAsync(null, null, null).ConfigureAwait(true);
         if (result is null)
             return;
 
@@ -505,6 +511,41 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IDisposable
     {
         foreach (var account in Accounts.Where(account => account.IsRunning).ToList())
             await account.StopAsync().ConfigureAwait(true);
+    }
+
+    // ---------------------------------------------------------- saved data
+
+    public void ResetCounters()
+    {
+        foreach (var account in Accounts)
+            account.ResetCounters();
+
+        _store.Save();
+        UpdateStatus();
+        _logger.Info(AppLogScopes.App, $"Счётчики сброшены, аккаунтов: {Accounts.Count}");
+    }
+
+    public bool ExportSettings(string path) => _store.Export(path);
+
+    public async Task<bool> ImportSettingsAsync(string path)
+    {
+        await StopAllAsync().ConfigureAwait(true);
+
+        if (!_store.Import(path))
+            return false;
+
+        foreach (var account in Accounts)
+            account.Dispose();
+
+        Accounts.Clear();
+        foreach (var config in _store.Config.Accounts)
+            Accounts.Add(CreateAccount(config));
+
+        SelectedAccount = Accounts.FirstOrDefault();
+        _store.Save();
+        UpdateStatus();
+        _logger.Success(AppLogScopes.App, $"Настройки восстановлены из копии, аккаунтов: {Accounts.Count}");
+        return true;
     }
 
     private void OnClockTick(object? sender, EventArgs e)

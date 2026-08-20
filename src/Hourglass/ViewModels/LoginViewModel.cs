@@ -38,6 +38,9 @@ public sealed class LoginViewModel : ViewModelBase, IAuthenticator
     private readonly IAppLogger _logger;
     private readonly string? _guardData;
 
+    /// <summary>Sign in the same way the account will boost, or Steam sees two addresses.</summary>
+    private readonly Uri? _proxy;
+
     private readonly object _promptGate = new();
     private TaskCompletionSource<string>? _codePrompt;
     private TaskCompletionSource<bool>? _choicePrompt;
@@ -54,11 +57,17 @@ public sealed class LoginViewModel : ViewModelBase, IAuthenticator
     private GuardMode _guardMode = GuardMode.None;
     private bool _isUsernameLocked;
 
-    public LoginViewModel(SteamLoginService loginService, IAppLogger logger, string? presetUsername, string? guardData)
+    public LoginViewModel(
+        SteamLoginService loginService,
+        IAppLogger logger,
+        string? presetUsername,
+        string? guardData,
+        Uri? proxy)
     {
         _loginService = loginService;
         _logger = logger;
         _guardData = guardData;
+        _proxy = proxy;
 
         _username = presetUsername ?? "";
         _isUsernameLocked = !string.IsNullOrEmpty(presetUsername);
@@ -186,7 +195,7 @@ public sealed class LoginViewModel : ViewModelBase, IAuthenticator
         try
         {
             var result = await _loginService
-                .SignInAsync(username, password, _guardData, this, _cts.Token)
+                .SignInAsync(username, password, _guardData, _proxy, this, _cts.Token)
                 .ConfigureAwait(true);
 
             Completed?.Invoke(this, result);

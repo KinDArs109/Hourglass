@@ -12,17 +12,27 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly IConfigStore _store;
     private readonly TelegramBotService _telegram;
     private readonly IBoostController _controller;
+    private readonly IAccountDataManager _data;
+    private readonly IDialogService _dialogs;
 
     private string _token;
     private string _statusMessage = "";
+    private string _dataMessage = "";
     private bool _isBusy;
     private bool _isStatusBad;
 
-    public SettingsViewModel(IConfigStore store, TelegramBotService telegram, IBoostController controller)
+    public SettingsViewModel(
+        IConfigStore store,
+        TelegramBotService telegram,
+        IBoostController controller,
+        IAccountDataManager data,
+        IDialogService dialogs)
     {
         _store = store;
         _telegram = telegram;
         _controller = controller;
+        _data = data;
+        _dialogs = dialogs;
 
         _token = SecretProtector.Unprotect(store.Config.Telegram.ProtectedToken) ?? "";
 
@@ -30,12 +40,78 @@ public sealed class SettingsViewModel : ViewModelBase
         UnpairCommand = new RelayCommand(_ => Unpair(), _ => IsPaired);
         SendTestCommand = new RelayCommand(_ => SendTest(), _ => IsPaired);
 
+        ResetCountersCommand = new RelayCommand(_ => ResetCounters());
+        ExportCommand = new RelayCommand(_ => Export());
+        ImportCommand = new AsyncRelayCommand(_ => ImportAsync());
+
         _telegram.StateChanged += OnBotStateChanged;
     }
 
     public ICommand SaveTokenCommand { get; }
     public ICommand UnpairCommand { get; }
     public ICommand SendTestCommand { get; }
+    public ICommand ResetCountersCommand { get; }
+    public ICommand ExportCommand { get; }
+    public ICommand ImportCommand { get; }
+
+    // ---------------------------------------------------------- saved data
+
+    public string DataMessage
+    {
+        get => _dataMessage;
+        private set
+        {
+            if (SetProperty(ref _dataMessage, value))
+                OnPropertyChanged(nameof(HasDataMessage));
+        }
+    }
+
+    public bool HasDataMessage => DataMessage.Length > 0;
+
+    private void ResetCounters()
+    {
+        var accounts = _store.Config.Accounts.Count;
+
+        if (!_dialogs.Confirm(
+                "Сбросить счётчики?",
+                $"Накрученные часы обнулятся у всех аккаунтов ({accounts}), у каждой игры, " +
+                "за сутки и в истории.\n\nАккаунты, вход, списки игр, цели и расписания останутся. " +
+                "Отменить это будет нельзя."))
+            return;
+
+        _data.ResetCounters();
+        DataMessage = "Счётчики обнулены.";
+    }
+
+    private void Export()
+    {
+        var path = _dialogs.PickSaveFile("Куда сохранить копию настроек", "hourglass-настройки.json");
+        if (path is null)
+            return;
+
+        DataMessage = _data.ExportSettings(path)
+            ? "Копия сохранена. Вход в Steam в неё не попал — на новом компьютере аккаунты " +
+              "придётся авторизовать заново."
+            : "Сохранить не вышло — подробности в журнале.";
+    }
+
+    private async Task ImportAsync()
+    {
+        var path = _dialogs.PickOpenFile("Из какого файла восстановить");
+        if (path is null)
+            return;
+
+        if (!_dialogs.Confirm(
+                "Восстановить настройки?",
+                "Текущие настройки и списки игр будут заменены тем, что в файле. " +
+                "Накрутка остановится.\n\nВход в Steam для аккаунтов, которые уже есть на этом " +
+                "компьютере, сохранится."))
+            return;
+
+        DataMessage = await _data.ImportSettingsAsync(path).ConfigureAwait(true)
+            ? "Настройки восстановлены."
+            : "Файл не подошёл — похоже, это не копия настроек Hourglass.";
+    }
 
     public string Token
     {

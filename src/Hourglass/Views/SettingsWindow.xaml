@@ -119,6 +119,37 @@
                 </TextBlock>
             </Border>
 
+            <Rectangle Style="{StaticResource HairLine}" Margin="0,22,0,18" />
+
+            <TextBlock Text="Данные" Style="{StaticResource TitleText}" />
+            <TextBlock Style="{StaticResource SecondaryText}"
+                       TextWrapping="Wrap"
+                       TextTrimming="None"
+                       Margin="0,6,0,14"
+                       Text="Копия настроек забирает аккаунты, списки игр, цели и расписания. Вход в Steam в неё не попадает: Windows привязывает его к этому компьютеру." />
+
+            <StackPanel Orientation="Horizontal">
+                <Button Content="Сбросить счётчики"
+                        Style="{StaticResource SecondaryButton}"
+                        Command="{Binding ResetCountersCommand}"
+                        ToolTip="Обнулить накрученные часы у всех аккаунтов, игр и в истории." />
+                <Button Content="Сохранить копию"
+                        Style="{StaticResource GhostButton}"
+                        Command="{Binding ExportCommand}"
+                        Margin="8,0,0,0" />
+                <Button Content="Восстановить из копии"
+                        Style="{StaticResource GhostButton}"
+                        Command="{Binding ImportCommand}"
+                        Margin="8,0,0,0" />
+            </StackPanel>
+
+            <TextBlock Text="{Binding DataMessage}"
+                       Style="{StaticResource SecondaryText}"
+                       TextWrapping="Wrap"
+                       TextTrimming="None"
+                       Margin="0,10,0,0"
+                       Visibility="{Binding HasDataMessage, Converter={StaticResource BoolToVisibility}}" />
+
             <Button Content="Закрыть"
                     Style="{StaticResource GhostButton}"
                     HorizontalAlignment="Right"

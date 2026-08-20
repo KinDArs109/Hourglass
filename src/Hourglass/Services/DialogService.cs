@@ -28,9 +28,9 @@ public sealed class DialogService : IDialogService
         _updates = updates;
     }
 
-    public Task<LoginResult?> ShowLoginAsync(string? presetUsername, string? guardData)
+    public Task<LoginResult?> ShowLoginAsync(string? presetUsername, string? guardData, Uri? proxy)
     {
-        var window = new LoginWindow(new LoginViewModel(_loginService, _logger, presetUsername, guardData))
+        var window = new LoginWindow(new LoginViewModel(_loginService, _logger, presetUsername, guardData, proxy))
         {
             Owner = ResolveOwner()
         };
@@ -51,9 +51,9 @@ public sealed class DialogService : IDialogService
         return Task.FromResult(window.Result);
     }
 
-    public void ShowSettings(IBoostController controller)
+    public void ShowSettings(IBoostController controller, IAccountDataManager data)
     {
-        var window = new SettingsWindow(new SettingsViewModel(_store, _telegram, controller))
+        var window = new SettingsWindow(new SettingsViewModel(_store, _telegram, controller, data, this))
         {
             Owner = ResolveOwner()
         };
@@ -61,9 +61,45 @@ public sealed class DialogService : IDialogService
         window.ShowDialog();
     }
 
+    private const string SettingsFilter = "Настройки Hourglass (*.json)|*.json|Все файлы (*.*)|*.*";
+
+    public string? PickSaveFile(string title, string suggestedName)
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = title,
+            FileName = suggestedName,
+            DefaultExt = ".json",
+            Filter = SettingsFilter,
+            AddExtension = true,
+            OverwritePrompt = true
+        };
+
+        return dialog.ShowDialog(ResolveOwner()) == true ? dialog.FileName : null;
+    }
+
+    public string? PickOpenFile(string title)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = title,
+            DefaultExt = ".json",
+            Filter = SettingsFilter,
+            CheckFileExists = true
+        };
+
+        return dialog.ShowDialog(ResolveOwner()) == true ? dialog.FileName : null;
+    }
+
     public void ShowLog(AccountViewModel account)
     {
         var window = new LogWindow(account) { Owner = ResolveOwner() };
+        window.ShowDialog();
+    }
+
+    public void ShowProxy(AccountViewModel account)
+    {
+        var window = new ProxyWindow(account) { Owner = ResolveOwner() };
         window.ShowDialog();
     }
 

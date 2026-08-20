@@ -45,6 +45,12 @@ public sealed class AccountConfig
     /// <summary>DPAPI-protected Steam Guard machine token, avoids repeat prompts.</summary>
     public string? ProtectedGuardData { get; set; }
 
+    /// <summary>
+    /// DPAPI-protected proxy address this account connects through, if any. Protected
+    /// because these usually come with a password baked into the address.
+    /// </summary>
+    public string? ProtectedProxy { get; set; }
+
     public bool ShowOnline { get; set; } = true;
 
     /// <summary>Optional free-text status shown instead of the game name.</summary>
@@ -69,6 +75,12 @@ public sealed class AccountConfig
     /// <summary>Local date the daily counter belongs to, as yyyy-MM-dd.</summary>
     public string? DailyDate { get; set; }
 
+    /// <summary>
+    /// Finished days, oldest first, so the history page has something to draw. Today is
+    /// not in here — it is still <see cref="DailySeconds"/> until midnight closes it.
+    /// </summary>
+    public List<DayStat> History { get; set; } = new();
+
     /// <summary>Games chosen for boosting.</summary>
     public List<GameConfig> Games { get; set; } = new();
 
@@ -77,6 +89,15 @@ public sealed class AccountConfig
     /// without opening another Steam session.
     /// </summary>
     public List<LibraryEntry> Library { get; set; } = new();
+}
+
+/// <summary>One finished day of boosting, for the history page.</summary>
+public sealed class DayStat
+{
+    /// <summary>Local date, as yyyy-MM-dd.</summary>
+    public string Date { get; set; } = "";
+
+    public long Seconds { get; set; }
 }
 
 public sealed class LibraryEntry
