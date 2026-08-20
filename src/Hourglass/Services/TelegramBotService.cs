@@ -29,6 +29,7 @@ public sealed class TelegramBotService : IDisposable
     private IBoostController? _controller;
     private string _token = "";
     private long _updateOffset;
+    private bool _isFailing;
     private bool _disposed;
 
     public TelegramBotService(IHttpClientFactory httpClientFactory, IAppLogger logger, IConfigStore store)
@@ -95,6 +96,28 @@ public sealed class TelegramBotService : IDisposable
         cts.Dispose();
         _logger.Info(AppLogScopes.App, "Telegram-бот остановлен");
         StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Puts the bot back on its feet if the polling loop ever stops on its own. Called
+    /// on a timer, because nothing else would notice: a bot that has stopped listening
+    /// is indistinguishable from a quiet evening.
+    /// </summary>
+    public void EnsureRunning(IBoostController controller)
+    {
+        if (_disposed || IsRunning)
+            return;
+
+        if (_pollTask is not null)
+        {
+            _logger.Warn(AppLogScopes.App, "Telegram-бот перестал слушать — поднимаю заново");
+
+            _cts?.Dispose();
+            _cts = null;
+            _pollTask = null;
+        }
+
+        Start(controller);
     }
 
     /// <summary>Restarts the bot so a changed token or switch takes effect immediately.</summary>
@@ -173,23 +196,58 @@ public sealed class TelegramBotService : IDisposable
                     await HandleMessageAsync(message.Chat.Id, message.Text.Trim(), cancellationToken)
                         .ConfigureAwait(false);
                 }
+
+                ReportRecovered();
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                // Ours. Anything else that arrives as a cancellation is a request that
+                // timed out, and that is the one below.
                 return;
             }
-            catch (TelegramException ex)
+            catch (Exception ex)
             {
-                _logger.Error(AppLogScopes.App, $"Telegram: {ex.Message}");
-                await DelayAsync(ErrorBackoff, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is HttpRequestException or JsonException)
-            {
-                // Ordinary connectivity noise; keep quiet and retry.
+                // Every failure lands here on purpose. An escaping exception would end
+                // the loop, and a bot that has quietly stopped polling looks exactly
+                // like a bot nobody is writing to — the silence tells no one anything.
+                ReportFailure(ex);
                 await DelayAsync(ErrorBackoff, cancellationToken).ConfigureAwait(false);
             }
         }
     }
+
+    /// <summary>
+    /// One line when the connection breaks and one when it comes back. Reporting every
+    /// retry would bury the journal under a page of the same message while the network
+    /// is down.
+    /// </summary>
+    private void ReportFailure(Exception exception)
+    {
+        if (_isFailing)
+            return;
+
+        _isFailing = true;
+        _logger.Warn(AppLogScopes.App,
+            $"Telegram: {Describe(exception)} — пробую снова каждые {ErrorBackoff.TotalSeconds:0} с");
+    }
+
+    private void ReportRecovered()
+    {
+        if (!_isFailing)
+            return;
+
+        _isFailing = false;
+        _logger.Success(AppLogScopes.App, "Telegram: связь восстановлена");
+    }
+
+    private static string Describe(Exception exception) => exception switch
+    {
+        TelegramException => exception.Message,
+        TaskCanceledException or TimeoutException => "не ответил вовремя",
+        HttpRequestException => "нет связи",
+        JsonException => "непонятный ответ",
+        _ => exception.Message
+    };
 
     private async Task<IReadOnlyList<TelegramUpdate>> FetchUpdatesAsync(CancellationToken cancellationToken)
     {

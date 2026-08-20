@@ -29,8 +29,12 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IAccountDat
 
     private static readonly TimeSpan StartStagger = TimeSpan.FromSeconds(3);
 
+    /// <summary>How often the Telegram bot is checked for still being alive.</summary>
+    private static readonly TimeSpan BotCheckInterval = TimeSpan.FromSeconds(30);
+
     private AccountViewModel? _selectedAccount;
     private DateTime _lastTickUtc = DateTime.UtcNow;
+    private DateTime _nextBotCheckUtc = DateTime.MinValue;
     private string _statusText = "";
     private bool _disposed;
 
@@ -568,7 +572,21 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IAccountDat
             account.Tick(elapsed);
 
         ApplySchedules();
+        WatchTelegram();
         UpdateStatus();
+    }
+
+    /// <summary>
+    /// Checks now and then that the Telegram bot is still listening. It runs on a
+    /// background task, and a task that has stopped makes no noise at all.
+    /// </summary>
+    private void WatchTelegram()
+    {
+        if (DateTime.UtcNow < _nextBotCheckUtc)
+            return;
+
+        _nextBotCheckUtc = DateTime.UtcNow + BotCheckInterval;
+        _telegram.EnsureRunning(this);
     }
 
     /// <summary>
