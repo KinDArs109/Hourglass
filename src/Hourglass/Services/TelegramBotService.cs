@@ -20,10 +20,12 @@ public sealed class TelegramBotService : IDisposable
     private static readonly TimeSpan PollTimeout = TimeSpan.FromSeconds(25);
     private static readonly TimeSpan ErrorBackoff = TimeSpan.FromSeconds(15);
 
-    private readonly IHttpClientFactory _httpClientFactory;
     private readonly IAppLogger _logger;
     private readonly IConfigStore _store;
+    private readonly object _clientGate = new();
 
+    private HttpClient? _client;
+    private string _clientProxy = "";
     private CancellationTokenSource? _cts;
     private Task? _pollTask;
     private IBoostController? _controller;
@@ -32,11 +34,51 @@ public sealed class TelegramBotService : IDisposable
     private bool _isFailing;
     private bool _disposed;
 
-    public TelegramBotService(IHttpClientFactory httpClientFactory, IAppLogger logger, IConfigStore store)
+    public TelegramBotService(IAppLogger logger, IConfigStore store)
     {
-        _httpClientFactory = httpClientFactory;
         _logger = logger;
         _store = store;
+    }
+
+    /// <summary>
+    /// The client the bot talks through, rebuilt whenever the proxy address changes.
+    /// Kept rather than made per request: the long poll runs around the clock, and a
+    /// fresh client each time would mean a fresh handshake with the proxy each time.
+    /// </summary>
+    private HttpClient ResolveClient()
+    {
+        var address = SecretProtector.Unprotect(_store.Config.Telegram.ProtectedProxy) ?? "";
+
+        lock (_clientGate)
+        {
+            if (_client is not null && _clientProxy == address)
+                return _client;
+
+            var previous = _client;
+            _client = BuildClient(address);
+            _clientProxy = address;
+
+            previous?.Dispose();
+            return _client;
+        }
+    }
+
+    private static HttpClient BuildClient(string address)
+    {
+        var handler = new HttpClientHandler();
+
+        if (ProxyAddress.TryParse(address, out var proxy, out _) && proxy is not null)
+        {
+            handler.Proxy = ProxyAddress.ToWebProxy(proxy);
+            handler.UseProxy = true;
+        }
+
+        var client = new HttpClient(handler);
+        client.DefaultRequestHeaders.Add("User-Agent", "Hourglass/1.0");
+
+        // Long polling holds the request open for ~25s, so the timeout must exceed it.
+        client.Timeout = TimeSpan.FromSeconds(60);
+        return client;
     }
 
     /// <summary>Shown in settings; the user sends it to the bot once to pair their chat.</summary>
@@ -142,7 +184,7 @@ public sealed class TelegramBotService : IDisposable
     /// <summary>Verifies a token without saving it, returning the bot's @name.</summary>
     public async Task<string> VerifyTokenAsync(string token, CancellationToken cancellationToken)
     {
-        using var client = _httpClientFactory.CreateClient(HttpClients.Telegram);
+        var client = ResolveClient();
         using var response = await client
             .GetAsync($"https://api.telegram.org/bot{token}/getMe", cancellationToken)
             .ConfigureAwait(false);
@@ -173,6 +215,12 @@ public sealed class TelegramBotService : IDisposable
         _cts?.Cancel();
         _cts?.Dispose();
         _cts = null;
+
+        lock (_clientGate)
+        {
+            _client?.Dispose();
+            _client = null;
+        }
     }
 
     // ------------------------------------------------------------------ polling
@@ -254,7 +302,7 @@ public sealed class TelegramBotService : IDisposable
         var url = $"https://api.telegram.org/bot{_token}/getUpdates" +
                   $"?timeout={(int)PollTimeout.TotalSeconds}&offset={_updateOffset}&allowed_updates=%5B%22message%22%5D";
 
-        using var client = _httpClientFactory.CreateClient(HttpClients.Telegram);
+        var client = ResolveClient();
         using var response = await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
 
         if (response.StatusCode == HttpStatusCode.Unauthorized)
@@ -346,7 +394,7 @@ public sealed class TelegramBotService : IDisposable
     {
         try
         {
-            using var client = _httpClientFactory.CreateClient(HttpClients.Telegram);
+            var client = ResolveClient();
             using var response = await client
                 .PostAsJsonAsync(
                     $"https://api.telegram.org/bot{_token}/sendMessage",

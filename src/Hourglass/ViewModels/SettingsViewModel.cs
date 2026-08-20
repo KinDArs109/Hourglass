@@ -16,6 +16,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly IDialogService _dialogs;
 
     private string _token;
+    private string _botProxy;
     private string _statusMessage = "";
     private string _dataMessage = "";
     private bool _isBusy;
@@ -35,6 +36,7 @@ public sealed class SettingsViewModel : ViewModelBase
         _dialogs = dialogs;
 
         _token = SecretProtector.Unprotect(store.Config.Telegram.ProtectedToken) ?? "";
+        _botProxy = SecretProtector.Unprotect(store.Config.Telegram.ProtectedProxy) ?? "";
 
         SaveTokenCommand = new AsyncRelayCommand(_ => SaveTokenAsync(), _ => Token.Trim().Length > 0 && !IsBusy);
         UnpairCommand = new RelayCommand(_ => Unpair(), _ => IsPaired);
@@ -135,6 +137,44 @@ public sealed class SettingsViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Where the bot reaches Telegram through. Its own setting rather than the account
+    /// proxy: Telegram gets blocked in places where Steam is left alone, and then this
+    /// is the only thing standing between the user and their phone.
+    /// </summary>
+    public string BotProxy
+    {
+        get => _botProxy;
+        set
+        {
+            var trimmed = value.Trim();
+            if (_botProxy == trimmed)
+                return;
+
+            if (!ProxyAddress.TryParse(trimmed, out _, out var error))
+            {
+                SetStatus(error, isBad: true);
+                OnPropertyChanged();
+                return;
+            }
+
+            _botProxy = trimmed;
+            _store.Config.Telegram.ProtectedProxy =
+                trimmed.Length == 0 ? null : SecretProtector.Protect(trimmed);
+
+            _store.Save();
+            OnPropertyChanged();
+
+            SetStatus(
+                trimmed.Length == 0
+                    ? "Прокси убран, бот пойдёт напрямую."
+                    : "Прокси сохранён. Проверьте кнопкой выше, что Telegram через него отвечает.",
+                isBad: false);
+
+            AsyncHelper.FireAndForget(RestartBotAsync, nameof(BotProxy));
+        }
+    }
+
     public bool NotifyProblems
     {
         get => _store.Config.Telegram.NotifyProblems;
@@ -211,7 +251,13 @@ public sealed class SettingsViewModel : ViewModelBase
         }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
         {
-            SetStatus("Не удалось связаться с Telegram. Проверьте интернет.", isBad: true);
+            // With a proxy set, blaming the internet sends the user looking in the
+            // wrong place — the connection that failed was the one to the proxy.
+            SetStatus(
+                _botProxy.Length > 0
+                    ? "Через прокси до Telegram не достучаться. Проверьте адрес прокси."
+                    : "Не удалось связаться с Telegram. Проверьте интернет.",
+                isBad: true);
         }
         finally
         {

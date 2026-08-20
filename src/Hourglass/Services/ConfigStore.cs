@@ -124,6 +124,7 @@ public sealed class ConfigStore : IConfigStore, IDisposable
                 }
 
                 copy.Telegram.ProtectedToken = null;
+                copy.Telegram.ProtectedProxy = null;
 
                 File.WriteAllText(path, JsonSerializer.Serialize(copy, SerializerOptions));
                 _logger.Success(AppLogScopes.App, $"Копия настроек сохранена: {Path.GetFileName(path)}");
@@ -170,6 +171,7 @@ public sealed class ConfigStore : IConfigStore, IDisposable
                 }
 
                 incoming.Telegram.ProtectedToken ??= Config.Telegram.ProtectedToken;
+                incoming.Telegram.ProtectedProxy ??= Config.Telegram.ProtectedProxy;
 
                 // Left unsaved on purpose: the caller has to stop the sessions and swap
                 // the account list over first, and only then is the new state worth

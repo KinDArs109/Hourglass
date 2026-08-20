@@ -108,13 +108,6 @@ public partial class App : Application
             client.Timeout = TimeSpan.FromMinutes(10);
         });
 
-        // Long polling holds the request open for ~25s, so the timeout must exceed it.
-        services.AddHttpClient(HttpClients.Telegram, client =>
-        {
-            client.DefaultRequestHeaders.Add("User-Agent", "Hourglass/1.0");
-            client.Timeout = TimeSpan.FromSeconds(60);
-        });
-
         services.AddSingleton<Func<string, SteamBoostSession>>(provider => username =>
             new SteamBoostSession(
                 username,

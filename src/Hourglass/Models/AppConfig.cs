@@ -25,6 +25,12 @@ public sealed class TelegramConfig
     /// <summary>The one chat allowed to command the app. Zero means not paired yet.</summary>
     public long ChatId { get; set; }
 
+    /// <summary>
+    /// DPAPI-protected proxy the bot reaches Telegram through, if any. Separate from the
+    /// per-account proxy: Telegram is blocked in places where Steam is not.
+    /// </summary>
+    public string? ProtectedProxy { get; set; }
+
     /// <summary>Send a message when an account needs attention.</summary>
     public bool NotifyProblems { get; set; } = true;
 }

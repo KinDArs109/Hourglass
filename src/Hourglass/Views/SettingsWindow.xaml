@@ -56,6 +56,18 @@
                         Margin="8,0,0,0" />
             </Grid>
 
+            <TextBlock Text="ПРОКСИ ДЛЯ БОТА (ЕСЛИ TELEGRAM НЕ ОТКРЫВАЕТСЯ)"
+                       Style="{StaticResource SectionHeaderText}" Margin="0,0,0,6" />
+            <TextBox Text="{Binding BotProxy, UpdateSourceTrigger=LostFocus}"
+                     Tag="host:port или socks5://user:pass@host:port"
+                     Margin="0,0,0,6" />
+            <TextBlock Style="{StaticResource MetricText}"
+                       Foreground="{StaticResource TextMutedBrush}"
+                       TextWrapping="Wrap"
+                       TextTrimming="None"
+                       Margin="0,0,0,14"
+                       Text="Касается только бота — накрутка Steam ходит своим путём. Пусто, если Telegram открывается и так. После сохранения нажмите «Проверить и включить»: ответ придёт уже через прокси." />
+
             <Border Style="{StaticResource InsetCard}" Padding="14" Margin="0,0,0,14">
                 <StackPanel>
                     <TextBlock Text="{Binding PairingInstruction}"
