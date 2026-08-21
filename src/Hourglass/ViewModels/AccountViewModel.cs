@@ -181,8 +181,8 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
         }
     }
 
-    public string SessionClockText => _session.BoostingSinceUtc is { } since
-        ? TimeFormat.Clock(DateTime.UtcNow - since)
+    public string SessionClockText => _session.BoostingFor is { } elapsed
+        ? TimeFormat.Clock(elapsed)
         : "00:00:00";
 
     public bool HasSessionClock => _session.BoostingSinceUtc is not null;
@@ -699,7 +699,7 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
                 : $"Запуск сессии через прокси {ProxyAddress.Describe(proxy)}");
         }
 
-        _session.Start(token, BuildPlan(), _runtime.ResolveFor(Username, proxy));
+        _session.Start(token, BuildPlan(), _runtime.ResolveFor(Username, proxy, _store.Config.ConnectOverWebSocket));
         RaiseSessionProperties();
     }
 
@@ -863,7 +863,7 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
     public async Task SignInAsync()
     {
         var result = await _dialogs
-            .ShowLoginAsync(_config.Username, SecretProtector.Unprotect(_config.ProtectedGuardData), ProxyUri)
+            .ShowLoginAsync(_config.Username, SecretProtector.Unprotect(_config.ProtectedGuardData), ProxyUri, _store.Config.ConnectOverWebSocket)
             .ConfigureAwait(true);
 
         if (result is null)

@@ -41,6 +41,9 @@ public sealed class LoginViewModel : ViewModelBase, IAuthenticator
     /// <summary>Sign in the same way the account will boost, or Steam sees two addresses.</summary>
     private readonly Uri? _proxy;
 
+    /// <summary>Same reason: the sign-in must take the route the boost will take.</summary>
+    private readonly bool _webSocketOnly;
+
     private readonly object _promptGate = new();
     private TaskCompletionSource<string>? _codePrompt;
     private TaskCompletionSource<bool>? _choicePrompt;
@@ -62,12 +65,14 @@ public sealed class LoginViewModel : ViewModelBase, IAuthenticator
         IAppLogger logger,
         string? presetUsername,
         string? guardData,
-        Uri? proxy)
+        Uri? proxy,
+        bool webSocketOnly)
     {
         _loginService = loginService;
         _logger = logger;
         _guardData = guardData;
         _proxy = proxy;
+        _webSocketOnly = webSocketOnly;
 
         _username = presetUsername ?? "";
         _isUsernameLocked = !string.IsNullOrEmpty(presetUsername);
@@ -195,7 +200,7 @@ public sealed class LoginViewModel : ViewModelBase, IAuthenticator
         try
         {
             var result = await _loginService
-                .SignInAsync(username, password, _guardData, _proxy, this, _cts.Token)
+                .SignInAsync(username, password, _guardData, _proxy, _webSocketOnly, this, _cts.Token)
                 .ConfigureAwait(true);
 
             Completed?.Invoke(this, result);

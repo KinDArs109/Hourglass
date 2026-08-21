@@ -28,9 +28,9 @@ public sealed class DialogService : IDialogService
         _updates = updates;
     }
 
-    public Task<LoginResult?> ShowLoginAsync(string? presetUsername, string? guardData, Uri? proxy)
+    public Task<LoginResult?> ShowLoginAsync(string? presetUsername, string? guardData, Uri? proxy, bool webSocketOnly)
     {
-        var window = new LoginWindow(new LoginViewModel(_loginService, _logger, presetUsername, guardData, proxy))
+        var window = new LoginWindow(new LoginViewModel(_loginService, _logger, presetUsername, guardData, proxy, webSocketOnly))
         {
             Owner = ResolveOwner()
         };

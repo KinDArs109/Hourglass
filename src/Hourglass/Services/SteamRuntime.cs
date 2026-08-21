@@ -1,5 +1,6 @@
 using System.IO;
 using System.Net.Http;
+using Hourglass.Services.Interfaces;
 using SteamKit2;
 using SteamKit2.Discovery;
 
@@ -21,45 +22,64 @@ namespace Hourglass.Services;
 public sealed class SteamRuntime
 {
     private readonly string _directory;
-    private readonly Dictionary<string, SteamConfiguration> _proxied =
-        new(StringComparer.OrdinalIgnoreCase);
-
+    private readonly IServerListProvider _sharedServers;
+    private readonly Dictionary<string, SteamConfiguration> _variants = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _gate = new();
+    private readonly IAppLogger _logger;
+    private readonly IHttpClientFactory _httpClientFactory;
 
-    public SteamRuntime()
+    public SteamRuntime(IAppLogger logger, IHttpClientFactory httpClientFactory)
     {
+        _logger = logger;
+        _httpClientFactory = httpClientFactory;
+
         _directory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             AppPaths.ProductName);
 
         Directory.CreateDirectory(_directory);
 
-        Configuration = SteamConfiguration.Create(builder =>
-            builder.WithServerListProvider(
-                new FileStorageServerListProvider(Path.Combine(_directory, "steam-servers.bin"))));
+        _sharedServers = new FileStorageServerListProvider(Path.Combine(_directory, "steam-servers.bin"));
+        Configuration = SteamConfiguration.Create(builder => builder.WithServerListProvider(_sharedServers));
     }
 
-    /// <summary>Shared by every account that goes straight out.</summary>
+    /// <summary>Shared by every account that goes straight out on Steam's own ports.</summary>
     public SteamConfiguration Configuration { get; }
 
-    /// <summary>What this account should connect with, proxy included when it has one.</summary>
-    public SteamConfiguration ResolveFor(string username, Uri? proxy)
+    /// <summary>
+    /// What this account should connect with. Same object for accounts that share the
+    /// route, so they also share the discovered server list.
+    /// </summary>
+    /// <param name="webSocketOnly">
+    /// Talk to Steam over 443 instead of its own ports (27015–27050). Tunnels and
+    /// company networks routinely pass the first and drop the rest.
+    /// </param>
+    public SteamConfiguration ResolveFor(string username, Uri? proxy, bool webSocketOnly)
     {
-        if (proxy is null)
+        if (proxy is null && !webSocketOnly)
             return Configuration;
 
-        var key = $"{username}|{proxy}";
+        var key = proxy is null ? "ws" : $"{username}|{proxy}";
 
         lock (_gate)
         {
-            if (_proxied.TryGetValue(key, out var existing))
+            if (_variants.TryGetValue(key, out var existing))
                 return existing;
 
-            var created = BuildProxied(username, proxy);
-            _proxied[key] = created;
+            var created = proxy is null ? BuildWebSocketOnly() : BuildProxied(username, proxy);
+            _variants[key] = created;
             return created;
         }
     }
+
+    private SteamConfiguration BuildWebSocketOnly() =>
+        SteamConfiguration.Create(builder => builder
+            .WithServerListProvider(new HttpsServerList(_logger, _httpClientFactory))
+
+            // Discovery is off on purpose: it would merge back the servers on unusual
+            // ports, which is exactly what this mode exists to avoid.
+            .WithDirectoryFetch(false)
+            .WithProtocolTypes(ProtocolTypes.WebSocket));
 
     private SteamConfiguration BuildProxied(string username, Uri proxy)
     {

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Diagnostics;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Hourglass.Models;
@@ -34,7 +35,7 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IAccountDat
     private static readonly TimeSpan BotCheckInterval = TimeSpan.FromSeconds(30);
 
     private AccountViewModel? _selectedAccount;
-    private DateTime _lastTickUtc = DateTime.UtcNow;
+    private long _lastTickStamp = Stopwatch.GetTimestamp();
     private DateTime _nextBotCheckUtc = DateTime.MinValue;
     private string _statusText = "";
     private bool _disposed;
@@ -158,6 +159,28 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IAccountDat
         }
     }
 
+    /// <summary>
+    /// Reach Steam over 443 instead of its own ports. Takes effect the next time an
+    /// account starts: the client is bound to one configuration for its life.
+    /// </summary>
+    public bool ConnectOverWebSocket
+    {
+        get => _store.Config.ConnectOverWebSocket;
+        set
+        {
+            if (_store.Config.ConnectOverWebSocket == value)
+                return;
+
+            _store.Config.ConnectOverWebSocket = value;
+            OnPropertyChanged();
+            _store.Save();
+
+            _logger.Info(AppLogScopes.App, value
+                ? "Steam будет подключаться через 443 — применится при следующем запуске аккаунта"
+                : "Steam будет подключаться своими портами — применится при следующем запуске аккаунта");
+        }
+    }
+
     /// <summary>Keep Windows awake while the app is actually boosting.</summary>
     public bool PreventSleepWhileBoosting
     {
@@ -200,7 +223,7 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IAccountDat
         if (_store.Config.LaunchWithWindows != _autoStart.IsEnabled)
             _autoStart.SetEnabled(_store.Config.LaunchWithWindows);
 
-        _lastTickUtc = DateTime.UtcNow;
+        _lastTickStamp = Stopwatch.GetTimestamp();
         _timer.Start();
         _clockTimer.Start();
         UpdateStatus();
@@ -449,7 +472,7 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IAccountDat
 
     private async Task AddAccountAsync()
     {
-        var result = await _dialogs.ShowLoginAsync(null, null, null).ConfigureAwait(true);
+        var result = await _dialogs.ShowLoginAsync(null, null, null, _store.Config.ConnectOverWebSocket).ConfigureAwait(true);
         if (result is null)
             return;
 
@@ -579,9 +602,10 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IAccountDat
 
     private void OnTick(object? sender, EventArgs e)
     {
-        var now = DateTime.UtcNow;
-        var elapsed = (now - _lastTickUtc).TotalSeconds;
-        _lastTickUtc = now;
+        // Measured with the monotonic clock: a time-server sync can shift the wall
+        // clock by a few seconds, and those seconds were never boosted.
+        var elapsed = Stopwatch.GetElapsedTime(_lastTickStamp).TotalSeconds;
+        _lastTickStamp = Stopwatch.GetTimestamp();
 
         // A machine waking from sleep can hand us a huge delta; do not credit it.
         if (elapsed is <= 0 or > 10)

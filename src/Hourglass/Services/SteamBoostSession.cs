@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading.Channels;
@@ -57,6 +58,7 @@ public sealed class SteamBoostSession : IDisposable
     private volatile bool _isRunning;
     private volatile bool _isSignedOn;
     private DateTime _lastLibraryRefreshUtc = DateTime.MinValue;
+    private long _boostingSinceStamp;
     private ulong _steamId;
     private bool _isReportingGames;
     private bool _disposed;
@@ -90,7 +92,13 @@ public sealed class SteamBoostSession : IDisposable
                         ?? throw new InvalidOperationException("SteamFriends handler is unavailable.");
 
         _subscriptions.Add(_callbacks.Subscribe<SteamClient.ConnectedCallback>(
-            _ => Publish(new SessionEvent(SessionEventKind.Connected))));
+            _ =>
+            {
+                // Worth a line: the port says which route Steam was reached by, and
+                // that is the first thing to look at when a tunnel is in the way.
+                _logger.Info(Username, $"Подключено к {_client.CurrentEndPoint}");
+                Publish(new SessionEvent(SessionEventKind.Connected));
+            }));
         _subscriptions.Add(_callbacks.Subscribe<SteamClient.DisconnectedCallback>(
             callback => Publish(new SessionEvent(SessionEventKind.Disconnected, UserInitiated: callback.UserInitiated))));
         _subscriptions.Add(_callbacks.Subscribe<SteamUser.LoggedOnCallback>(
@@ -112,6 +120,16 @@ public sealed class SteamBoostSession : IDisposable
 
     /// <summary>UTC time the current uninterrupted boost started, if any.</summary>
     public DateTime? BoostingSinceUtc { get; private set; }
+
+    /// <summary>
+    /// How long the current boost has been running, measured against a clock that only
+    /// ever counts forward. The wall clock is the wrong tool for this: Windows nudges it
+    /// whenever it syncs with a time server, and a nudge of a few seconds would show up
+    /// as the session timer jumping ahead for no reason.
+    /// </summary>
+    public TimeSpan? BoostingFor => BoostingSinceUtc is null
+        ? null
+        : Stopwatch.GetElapsedTime(_boostingSinceStamp);
 
     /// <summary>
     /// The games Steam is being told about right now, empty when nothing is running.
@@ -492,6 +510,7 @@ public sealed class SteamBoostSession : IDisposable
         var plan = _plan;
         _isReportingGames = true;
         BoostingSinceUtc = DateTime.UtcNow;
+        _boostingSinceStamp = Stopwatch.GetTimestamp();
         NextRetryUtc = null;
         SetState(SessionState.Boosting, DescribePlan(plan));
         ApplyPlanToSteam(plan);

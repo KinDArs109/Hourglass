@@ -160,6 +160,10 @@
                                   Content="Сворачивать в трей"
                                   IsChecked="{Binding MinimizeToTray}" />
                         <CheckBox Style="{StaticResource ToggleSwitch}"
+                                  Content="Steam через 443"
+                                  IsChecked="{Binding ConnectOverWebSocket}"
+                                  ToolTip="Подключаться к Steam по обычному порту 443 вместо его собственных 27015–27050. Помогает, когда включён VPN или сеть режет лишние порты. Применится при следующем запуске аккаунта." />
+                        <CheckBox Style="{StaticResource ToggleSwitch}"
                                   Content="Не давать компьютеру уснуть"
                                   IsChecked="{Binding PreventSleepWhileBoosting}"
                                   ToolTip="Пока идёт накрутка, компьютер не уходит в сон. Экран гаснуть может." />

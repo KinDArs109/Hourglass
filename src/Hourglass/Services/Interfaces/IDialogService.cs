@@ -6,7 +6,7 @@ namespace Hourglass.Services.Interfaces;
 public interface IDialogService
 {
     /// <summary>Runs the sign-in window. Returns null when the user cancels.</summary>
-    Task<LoginResult?> ShowLoginAsync(string? presetUsername, string? guardData, Uri? proxy);
+    Task<LoginResult?> ShowLoginAsync(string? presetUsername, string? guardData, Uri? proxy, bool webSocketOnly);
 
     /// <summary>Runs the game picker. Returns null when the user cancels.</summary>
     Task<IReadOnlyList<GameConfig>?> ShowGamePickerAsync(AccountViewModel account);

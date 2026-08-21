@@ -15,6 +15,12 @@ public sealed class AppConfig
     /// <summary>Hold sleep off while boosting — a sleeping machine counts no hours.</summary>
     public bool PreventSleepWhileBoosting { get; set; } = true;
 
+    /// <summary>
+    /// Reach Steam over 443 instead of its own ports. Tunnels and company networks
+    /// often pass the first and drop the rest.
+    /// </summary>
+    public bool ConnectOverWebSocket { get; set; }
+
     public TelegramConfig Telegram { get; set; } = new();
 }
 
