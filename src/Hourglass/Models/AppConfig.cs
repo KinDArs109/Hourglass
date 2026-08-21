@@ -12,6 +12,9 @@ public sealed class AppConfig
     /// <summary>Yield the account when the local Steam client signs in with it.</summary>
     public bool PauseWhenSteamClientRuns { get; set; } = true;
 
+    /// <summary>Hold sleep off while boosting — a sleeping machine counts no hours.</summary>
+    public bool PreventSleepWhileBoosting { get; set; } = true;
+
     public TelegramConfig Telegram { get; set; } = new();
 }
 

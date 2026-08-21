@@ -22,6 +22,7 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IAccountDat
     private readonly TelegramBotService _telegram;
     private readonly UpdateService _updates;
     private readonly SteamRuntime _runtime;
+    private readonly SleepBlocker _sleepBlocker;
     private readonly Dictionary<string, SessionState> _notifiedStates = new(StringComparer.OrdinalIgnoreCase);
     private readonly Func<string, SteamBoostSession> _sessionFactory;
     private readonly DispatcherTimer _timer;
@@ -50,6 +51,7 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IAccountDat
         TelegramBotService telegram,
         UpdateService updates,
         SteamRuntime runtime,
+        SleepBlocker sleepBlocker,
         Func<string, SteamBoostSession> sessionFactory)
     {
         _store = store;
@@ -63,6 +65,7 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IAccountDat
         _telegram = telegram;
         _updates = updates;
         _runtime = runtime;
+        _sleepBlocker = sleepBlocker;
         _sessionFactory = sessionFactory;
 
         AddAccountCommand = new AsyncRelayCommand(_ => AddAccountAsync());
@@ -152,6 +155,22 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IAccountDat
 
             foreach (var account in Accounts)
                 account.PushPlan();
+        }
+    }
+
+    /// <summary>Keep Windows awake while the app is actually boosting.</summary>
+    public bool PreventSleepWhileBoosting
+    {
+        get => _store.Config.PreventSleepWhileBoosting;
+        set
+        {
+            if (_store.Config.PreventSleepWhileBoosting == value)
+                return;
+
+            _store.Config.PreventSleepWhileBoosting = value;
+            OnPropertyChanged();
+            _store.Save();
+            UpdateStatus();
         }
     }
 
@@ -643,6 +662,9 @@ public sealed class MainViewModel : ViewModelBase, IBoostController, IAccountDat
         StatusText = Accounts.Count == 0
             ? $"Аккаунтов нет · {clientText}"
             : $"Аккаунтов: {Accounts.Count} · накрутка: {boosting} · {clientText}";
+
+        // Called from the UI thread only, which is what the hold is tied to.
+        _sleepBlocker.Hold(boosting > 0 && _store.Config.PreventSleepWhileBoosting);
 
         var trayStatus = attention > 0 ? TrayStatus.Attention
             : boosting > 0 ? TrayStatus.Active

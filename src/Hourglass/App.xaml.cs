@@ -62,11 +62,28 @@ public partial class App : Application
 
         StartActivationListener();
 
+        // Start and finish both leave a mark. Without them a program that is gone in the
+        // morning is indistinguishable from one that was closed on purpose, and the
+        // journal is the only witness there is.
+        _services.GetRequiredService<IAppLogger>().Info(
+            AppLogScopes.App, $"Программа запущена, версия {UpdateService.CurrentVersionText}");
+
+        SessionEnding += OnSessionEnding;
+
         base.OnStartup(e);
     }
 
+    private void OnSessionEnding(object sender, SessionEndingCancelEventArgs e) =>
+        _services?.GetService<IAppLogger>()?.Info(
+            AppLogScopes.App,
+            e.ReasonSessionEnding == ReasonSessionEnding.Shutdown
+                ? "Windows выключается — закрываюсь"
+                : "Выход из учётной записи Windows — закрываюсь");
+
     protected override void OnExit(ExitEventArgs e)
     {
+        _services?.GetService<IAppLogger>()?.Info(AppLogScopes.App, "Программа закрыта");
+
         _pipeCancellation?.Cancel();
         _pipeCancellation?.Dispose();
 
@@ -92,6 +109,7 @@ public partial class App : Application
         services.AddSingleton<CardFarmService>();
         services.AddSingleton<UpdateService>();
         services.AddSingleton<SystemTrayService>();
+        services.AddSingleton<SleepBlocker>();
         services.AddSingleton<IDialogService, DialogService>();
 
         services.AddHttpClient(HttpClients.SteamApi, client =>

@@ -160,6 +160,10 @@
                                   Content="Сворачивать в трей"
                                   IsChecked="{Binding MinimizeToTray}" />
                         <CheckBox Style="{StaticResource ToggleSwitch}"
+                                  Content="Не давать компьютеру уснуть"
+                                  IsChecked="{Binding PreventSleepWhileBoosting}"
+                                  ToolTip="Пока идёт накрутка, компьютер не уходит в сон. Экран гаснуть может." />
+                        <CheckBox Style="{StaticResource ToggleSwitch}"
                                   Content="Пауза, когда играю сам"
                                   IsChecked="{Binding PauseWhenSteamClientRuns}"
                                   ToolTip="Накрутка уступает, только когда вы запустили игру на том же аккаунте. Просто сидеть в Steam она не мешает." />
