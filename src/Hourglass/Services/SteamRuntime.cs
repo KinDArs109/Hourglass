@@ -74,7 +74,11 @@ public sealed class SteamRuntime
 
     private SteamConfiguration BuildWebSocketOnly() =>
         SteamConfiguration.Create(builder => builder
-            .WithServerListProvider(new HttpsServerList(_logger, _httpClientFactory))
+            .WithServerListProvider(new HttpsServerList(
+                _logger,
+                _httpClientFactory,
+                Path.Combine(_directory, "steam-servers-443.txt"),
+                _sharedServers))
 
             // Discovery is off on purpose: it would merge back the servers on unusual
             // ports, which is exactly what this mode exists to avoid.
