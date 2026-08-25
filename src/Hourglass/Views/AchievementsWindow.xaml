@@ -111,11 +111,32 @@
                                     <StackPanel Grid.Column="1" Margin="12,0,0,0">
                                         <TextBlock Text="{Binding Title}"
                                                    FontWeight="SemiBold"
-                                                   TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Text="{Binding Note}"
+                                                   TextTrimming="CharacterEllipsis">
+                                            <TextBlock.Style>
+                                                <!-- The ones Steam will not let us set are dimmed, so the
+                                                     eye skips them the way the checkbox already does. -->
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsBlocked}" Value="True">
+                                                            <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+
+                                        <TextBlock Text="{Binding Description}"
                                                    Style="{StaticResource MetricText}"
                                                    TextTrimming="CharacterEllipsis"
                                                    Margin="0,2,0,0" />
+
+                                        <TextBlock Text="{Binding BlockedNote}"
+                                                   FontSize="11"
+                                                   Margin="0,3,0,0"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Foreground="{StaticResource DangerBrush}"
+                                                   Visibility="{Binding IsBlocked, Converter={StaticResource BoolToVisibility}}" />
                                     </StackPanel>
                                 </Grid>
                             </DataTemplate>

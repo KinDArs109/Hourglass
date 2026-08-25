@@ -10,6 +10,7 @@ namespace Hourglass.ViewModels;
 public sealed class AchievementViewModel : ViewModelBase
 {
     private bool _isUnlocked;
+    private bool _isRefused;
 
     public AchievementViewModel(Achievement achievement)
     {
@@ -48,7 +49,30 @@ public sealed class AchievementViewModel : ViewModelBase
         }
     }
 
-    public string Note => CanChange ? Description : "Выдаёт только сервер игры";
+    /// <summary>Steam says outright that only a game server may set this one.</summary>
+    public bool IsProtected => !CanChange;
+
+    /// <summary>
+    /// Set after an attempt that Steam quietly ignored. The schema does not always
+    /// admit which achievements are out of reach, so the refusal is noticed by asking
+    /// Steam again and seeing what came back unchanged.
+    /// </summary>
+    public bool IsRefused
+    {
+        get => _isRefused;
+        set
+        {
+            if (SetProperty(ref _isRefused, value))
+                OnPropertyChanged(nameof(IsBlocked));
+        }
+    }
+
+    /// <summary>Either kind of "cannot be granted", for the list to colour in.</summary>
+    public bool IsBlocked => IsProtected || IsRefused;
+
+    public string BlockedNote => IsProtected
+        ? "Выдать нельзя — это достижение ставит сервер игры"
+        : "Steam не принял — выдать нельзя";
 }
 
 /// <summary>
@@ -61,6 +85,7 @@ public sealed class AchievementsViewModel : ViewModelBase
     private readonly AccountViewModel _account;
 
     private AchievementSet? _set;
+    private IReadOnlySet<string>? _requested;
     private OwnedGame? _selectedGame;
     private string _search = "";
     private string _status = "";
@@ -120,9 +145,19 @@ public sealed class AchievementsViewModel : ViewModelBase
         }
     }
 
-    public string Summary => Achievements.Count == 0
-        ? ""
-        : $"Всего {Achievements.Count} · выдано {Achievements.Count(item => item.IsUnlocked)}";
+    public string Summary
+    {
+        get
+        {
+            if (Achievements.Count == 0)
+                return "";
+
+            var summary = $"Всего {Achievements.Count} · выдано {Achievements.Count(item => item.IsUnlocked)}";
+            var locked = Achievements.Count(item => item.IsBlocked);
+
+            return locked > 0 ? summary + $" · нельзя выдать {locked}" : summary;
+        }
+    }
 
     public string Status
     {
@@ -184,14 +219,19 @@ public sealed class AchievementsViewModel : ViewModelBase
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(40));
             _set = await _account.GetAchievementsAsync(game.AppId, timeout.Token).ConfigureAwait(true);
 
-            foreach (var achievement in _set.Achievements.OrderBy(item => item.Title,
-                         StringComparer.CurrentCultureIgnoreCase))
+            // The ones that can be granted come first: the rest are there to be seen,
+            // not acted on.
+            foreach (var achievement in _set.Achievements
+                         .OrderBy(item => item.IsProtected)
+                         .ThenBy(item => item.Title, StringComparer.CurrentCultureIgnoreCase))
                 Achievements.Add(new AchievementViewModel(achievement));
 
-            var locked = Achievements.Count(item => !item.CanChange);
+            MarkRefused();
+
+            var locked = Achievements.Count(item => item.IsBlocked);
             SetStatus(
                 locked > 0
-                    ? $"Готово. {locked} из них выдаёт только сервер игры — их изменить нельзя."
+                    ? $"Готово. Красным помечены {locked} — их Steam выдать не даёт."
                     : "Готово. Отметьте нужные и нажмите «Применить».",
                 isBad: false);
         }
@@ -235,7 +275,9 @@ public sealed class AchievementsViewModel : ViewModelBase
             SetStatus($"Отправлено в Steam: изменено {changed}. Перечитываем…", isBad: false);
 
             // Steam is the judge of what actually stuck, so the list is read back rather
-            // than assumed. A refused achievement will simply come back as it was.
+            // than assumed. Anything that comes back unchanged was refused.
+            _requested = wanted;
+
             await Task.Delay(TimeSpan.FromSeconds(3)).ConfigureAwait(true);
             await LoadAsync().ConfigureAwait(true);
         }
@@ -247,6 +289,24 @@ public sealed class AchievementsViewModel : ViewModelBase
         {
             IsBusy = false;
         }
+    }
+
+    /// <summary>
+    /// Compares what was asked for with what Steam gave back. Whatever did not move is
+    /// out of reach, whatever the schema claimed about it.
+    /// </summary>
+    private void MarkRefused()
+    {
+        if (_requested is null)
+            return;
+
+        foreach (var achievement in Achievements)
+        {
+            var asked = _requested.Contains(achievement.ApiName);
+            achievement.IsRefused = asked != achievement.IsUnlocked;
+        }
+
+        _requested = null;
     }
 
     private void MarkAll(bool unlocked)
