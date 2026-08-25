@@ -111,6 +111,7 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
         ShowLogCommand = new RelayCommand(_ => _dialogs.ShowLog(this));
         TestProxyCommand = new AsyncRelayCommand(_ => TestProxyAsync(), _ => !_isCheckingProxy);
         ShowProxyCommand = new RelayCommand(_ => _dialogs.ShowProxy(this));
+        ShowAchievementsCommand = new RelayCommand(_ => _dialogs.ShowAchievements(this));
     }
 
     public event EventHandler? RemoveRequested;
@@ -139,6 +140,7 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
     public ICommand ShowLogCommand { get; }
     public ICommand TestProxyCommand { get; }
     public ICommand ShowProxyCommand { get; }
+    public ICommand ShowAchievementsCommand { get; }
 
     public string DisplayName => string.IsNullOrWhiteSpace(_config.DisplayName)
         ? _config.Username
@@ -1084,6 +1086,16 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
     /// <summary>Asks Steam for the owned games again. False when the account is not on.</summary>
     public Task<bool> RefreshLibraryNowAsync(CancellationToken cancellationToken) =>
         _session.RefreshLibraryNowAsync(cancellationToken);
+
+    public bool IsSignedOn => _session.IsSignedOn;
+
+    /// <summary>Reads one game's achievements over this account's Steam connection.</summary>
+    public Task<AchievementSet> GetAchievementsAsync(uint appId, CancellationToken cancellationToken) =>
+        _session.GetAchievementsAsync(appId, cancellationToken);
+
+    /// <summary>Sets the achievements to exactly the state described.</summary>
+    public int SetAchievements(AchievementSet set, IReadOnlySet<string> unlocked) =>
+        _session.SetAchievements(set, unlocked);
 
     public IReadOnlyList<OwnedGame> Library => _config.Library
         .Select(entry => new OwnedGame(entry.AppId, entry.Name, entry.PlaytimeMinutes, entry.HasCards))

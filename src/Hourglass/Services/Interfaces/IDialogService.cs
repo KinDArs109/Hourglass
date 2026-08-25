@@ -25,6 +25,9 @@ public interface IDialogService
     /// <summary>Opens the proxy settings for one account.</summary>
     void ShowProxy(AccountViewModel account);
 
+    /// <summary>Opens the achievement manager for one account.</summary>
+    void ShowAchievements(AccountViewModel account);
+
     /// <summary>Offers the update. True when the new build is staged and we must restart.</summary>
     bool ShowUpdate(UpdateInfo update);
 

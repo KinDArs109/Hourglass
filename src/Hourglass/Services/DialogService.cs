@@ -103,6 +103,12 @@ public sealed class DialogService : IDialogService
         window.ShowDialog();
     }
 
+    public void ShowAchievements(AccountViewModel account)
+    {
+        var window = new AchievementsWindow(new AchievementsViewModel(account)) { Owner = ResolveOwner() };
+        window.ShowDialog();
+    }
+
     public bool ShowUpdate(UpdateInfo update)
     {
         var window = new UpdateWindow(new UpdateViewModel(_updates, update))

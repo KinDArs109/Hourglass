@@ -45,6 +45,7 @@ public sealed class SteamBoostSession : IDisposable
     private CallbackManager _callbacks;
     private SteamUser _steamUser;
     private SteamFriends _steamFriends;
+    private AchievementHandler _achievements;
     private readonly Channel<SessionEvent> _events =
         Channel.CreateUnbounded<SessionEvent>(new UnboundedChannelOptions { SingleReader = true });
 
@@ -84,7 +85,8 @@ public sealed class SteamBoostSession : IDisposable
     /// constructor because the client is bound to one configuration for life, and an
     /// account that gains or loses a proxy needs a different one.
     /// </summary>
-    [MemberNotNull(nameof(_client), nameof(_callbacks), nameof(_steamUser), nameof(_steamFriends))]
+    [MemberNotNull(nameof(_client), nameof(_callbacks), nameof(_steamUser), nameof(_steamFriends),
+        nameof(_achievements))]
     private void BuildClient()
     {
         // The identifier only shows up in SteamKit's own debug output, but it makes a
@@ -95,6 +97,11 @@ public sealed class SteamBoostSession : IDisposable
                      ?? throw new InvalidOperationException("SteamUser handler is unavailable.");
         _steamFriends = _client.GetHandler<SteamFriends>()
                         ?? throw new InvalidOperationException("SteamFriends handler is unavailable.");
+
+        // Not one of SteamKit's own: achievements travel as raw messages, so the
+        // handler that understands them is added here.
+        _achievements = new AchievementHandler();
+        _client.AddHandler(_achievements);
 
         _subscriptions.Add(_callbacks.Subscribe<SteamClient.ConnectedCallback>(
             _ =>
@@ -279,6 +286,30 @@ public sealed class SteamBoostSession : IDisposable
     }
 
     public ulong SteamId => _steamId;
+
+    /// <summary>
+    /// Reads one game's achievements. Needs the account signed in: they travel over the
+    /// same connection the boost is already holding open.
+    /// </summary>
+    public Task<AchievementSet> GetAchievementsAsync(uint appId, CancellationToken cancellationToken)
+    {
+        if (!_isSignedOn || _steamId == 0)
+            throw new AchievementException("Аккаунт не в сети — запустите его и попробуйте снова.");
+
+        return _achievements.FetchAsync(appId, _steamId, cancellationToken);
+    }
+
+    /// <summary>Sets the achievements to exactly the state described.</summary>
+    public int SetAchievements(AchievementSet set, IReadOnlySet<string> unlocked)
+    {
+        if (!_isSignedOn || _steamId == 0)
+            throw new AchievementException("Аккаунт не в сети — запустите его и попробуйте снова.");
+
+        var changed = _achievements.Apply(set, unlocked, _steamId);
+        _logger.Info(Username, $"Достижений изменено: {changed} (игра {set.AppId})");
+
+        return changed;
+    }
 
     /// <summary>
     /// Mints a Web API access token. Steam only issues one to a signed-in session, so

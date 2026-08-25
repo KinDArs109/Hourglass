@@ -295,6 +295,11 @@
                                             Margin="8,0,0,0"
                                             Command="{Binding ShowProxyCommand}"
                                             ToolTip="Через какой адрес этот аккаунт ходит в Steam." />
+                                    <Button Content="Достижения"
+                                            Style="{StaticResource GhostButton}"
+                                            Margin="8,0,0,0"
+                                            Command="{Binding ShowAchievementsCommand}"
+                                            ToolTip="Выдать или снять достижения в любой игре аккаунта." />
                                     <Button Content="Удалить"
                                             Style="{StaticResource DangerButton}"
                                             Margin="8,0,0,0"
