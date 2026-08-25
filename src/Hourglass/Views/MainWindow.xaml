@@ -257,19 +257,23 @@
                                            Style="{StaticResource SecondaryText}"
                                            Margin="0,6,0,0" />
 
-                                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                <!-- Wraps rather than runs off the card: the row has grown a button at a
+                                     time, and a narrow window has to keep all of them reachable. -->
+                                <WrapPanel Margin="0,14,-8,-8">
                                     <Button Content="Запустить"
                                             Style="{StaticResource PrimaryButton}"
                                             MinWidth="112"
+                                            Margin="0,0,8,8"
                                             Command="{Binding StartCommand}"
                                             Visibility="{Binding IsRunning, Converter={StaticResource InverseBoolToVisibility}}" />
                                     <Button Content="Остановить"
                                             Style="{StaticResource SecondaryButton}"
                                             MinWidth="112"
+                                            Margin="0,0,8,8"
                                             Command="{Binding StopCommand}"
                                             Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}}" />
                                     <Button Content="Войти заново"
-                                            Margin="8,0,0,0"
+                                            Margin="0,0,8,8"
                                             Command="{Binding SignInCommand}">
                                         <Button.Style>
                                             <!-- Quietly available, but highlighted once the saved token dies. -->
@@ -287,24 +291,24 @@
                                     </Button>
                                     <Button Content="Журнал"
                                             Style="{StaticResource GhostButton}"
-                                            Margin="8,0,0,0"
+                                            Margin="0,0,8,8"
                                             Command="{Binding ShowLogCommand}"
                                             ToolTip="События этого аккаунта: входы, паузы, фарм карточек." />
                                     <Button Content="{Binding ProxyButtonText}"
                                             Style="{StaticResource GhostButton}"
-                                            Margin="8,0,0,0"
+                                            Margin="0,0,8,8"
                                             Command="{Binding ShowProxyCommand}"
                                             ToolTip="Через какой адрес этот аккаунт ходит в Steam." />
                                     <Button Content="Достижения"
                                             Style="{StaticResource GhostButton}"
-                                            Margin="8,0,0,0"
+                                            Margin="0,0,8,8"
                                             Command="{Binding ShowAchievementsCommand}"
                                             ToolTip="Выдать или снять достижения в любой игре аккаунта." />
                                     <Button Content="Удалить"
                                             Style="{StaticResource DangerButton}"
-                                            Margin="8,0,0,0"
+                                            Margin="0,0,8,8"
                                             Command="{Binding RemoveAccountCommand}" />
-                                </StackPanel>
+                                </WrapPanel>
                             </StackPanel>
 
                             <StackPanel Grid.Column="2" HorizontalAlignment="Right">
