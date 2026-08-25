@@ -4,6 +4,11 @@ using SteamKit2;
 namespace Hourglass.Services;
 
 /// <summary>
+/// What an account owns outright, and how many licences it merely borrows from a family.
+/// </summary>
+public sealed record OwnedApps(IReadOnlyList<OwnedGame> Games, int SharedLicenses);
+
+/// <summary>
 /// Works out everything an account can actually play, by walking its licences.
 ///
 /// Steam's own list of games leaves out free titles that were never launched — an
@@ -25,18 +30,30 @@ public static class SteamOwnedApps
     private static readonly IReadOnlyList<SteamApps.PICSProductInfoCallback> Empty =
         Array.Empty<SteamApps.PICSProductInfoCallback>();
 
-    public static async Task<IReadOnlyList<OwnedGame>> FetchAsync(
+    public static async Task<OwnedApps> FetchAsync(
         SteamClient client,
         IReadOnlyCollection<SteamApps.LicenseListCallback.License> licenses,
+        ulong steamId,
         CancellationToken cancellationToken)
     {
         if (licenses.Count == 0)
-            return Array.Empty<OwnedGame>();
+            return new OwnedApps(Array.Empty<OwnedGame>(), 0);
 
         var apps = client.GetHandler<SteamApps>()
                    ?? throw new InvalidOperationException("SteamApps handler is unavailable.");
 
-        var packageRequests = licenses
+        // Licences held by somebody else are family shares. Idling a borrowed game takes
+        // it away from the person who owns it — they get thrown out of their own game —
+        // so those are left alone.
+        var accountId = new SteamID(steamId).AccountID;
+        var own = licenses.Where(license => license.OwnerAccountID == accountId).ToList();
+
+        var shared = licenses.Count - own.Count;
+
+        if (own.Count == 0)
+            return new OwnedApps(Array.Empty<OwnedGame>(), shared);
+
+        var packageRequests = own
             .GroupBy(license => license.PackageID)
             .Select(group => new SteamApps.PICSRequest(group.Key, group.First().AccessToken))
             .ToList();
@@ -45,9 +62,10 @@ public static class SteamOwnedApps
             .ConfigureAwait(false);
 
         if (appIds.Count == 0)
-            return Array.Empty<OwnedGame>();
+            return new OwnedApps(Array.Empty<OwnedGame>(), shared);
 
-        return await ReadAppNamesAsync(apps, appIds, cancellationToken).ConfigureAwait(false);
+        var games = await ReadAppNamesAsync(apps, appIds, cancellationToken).ConfigureAwait(false);
+        return new OwnedApps(games, shared);
     }
 
     private static async Task<IReadOnlyList<uint>> ReadPackageAppsAsync(

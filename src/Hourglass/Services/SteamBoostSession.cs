@@ -121,7 +121,14 @@ public sealed class SteamBoostSession : IDisposable
             {
                 _licenses = callback.LicenseList;
                 _licenseApps = null;
-                _logger.Info(Username, $"Лицензий на аккаунте: {callback.LicenseList.Count}");
+
+                var accountId = new SteamID(_steamId).AccountID;
+                var mine = callback.LicenseList.Count(license => license.OwnerAccountID == accountId);
+                var nobody = callback.LicenseList.Count(license => license.OwnerAccountID == 0);
+
+                _logger.Info(Username,
+                    $"Лицензий на аккаунте: {callback.LicenseList.Count} " +
+                    $"(свои {mine}, без владельца {nobody})");
             }));
     }
 
@@ -513,11 +520,16 @@ public sealed class SteamBoostSession : IDisposable
         {
             try
             {
-                _licenseApps = await SteamOwnedApps
-                    .FetchAsync(_client, _licenses, cancellationToken)
+                var owned = await SteamOwnedApps
+                    .FetchAsync(_client, _licenses, _steamId, cancellationToken)
                     .ConfigureAwait(false);
 
-                _logger.Info(Username, $"По лицензиям найдено игр: {_licenseApps.Count}");
+                _licenseApps = owned.Games;
+
+                _logger.Info(Username, owned.SharedLicenses > 0
+                    ? $"По лицензиям найдено игр: {owned.Games.Count}. " +
+                      $"Семейных лицензий пропущено: {owned.SharedLicenses} — чужие игры не трогаем"
+                    : $"По лицензиям найдено игр: {owned.Games.Count}");
             }
             catch (Exception ex) when (ex is TimeoutException or InvalidOperationException
                                            or AsyncJobFailedException or OperationCanceledException)
