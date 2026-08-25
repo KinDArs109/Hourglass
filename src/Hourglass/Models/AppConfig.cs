@@ -120,6 +120,9 @@ public sealed class LibraryEntry
     public uint AppId { get; set; }
     public string Name { get; set; } = "";
     public long PlaytimeMinutes { get; set; }
+
+    /// <summary>Steam says this game has trading cards.</summary>
+    public bool HasCards { get; set; }
 }
 
 public sealed class GameConfig

@@ -16,6 +16,7 @@ public sealed class FarmGameViewModel : ViewModelBase
         DropsRemaining = badge.DropsRemaining;
         HoursPlayed = badge.HoursPlayed;
         IsActive = isActive;
+        IsUnstarted = badge.IsUnstarted;
 
         AsyncHelper.FireAndForget(async () =>
         {
@@ -42,15 +43,24 @@ public sealed class FarmGameViewModel : ViewModelBase
         private set => SetProperty(ref _capsule, value);
     }
 
-    public bool IsReady => HoursPlayed >= CardFarmPlanner.HoursBeforeDropsBegin;
+    public bool IsReady => !IsUnstarted && HoursPlayed >= CardFarmPlanner.HoursBeforeDropsBegin;
 
-    public string DropsText => $"{DropsRemaining} {Plural.Of(DropsRemaining, "карточка", "карточки", "карточек")}";
+    /// <summary>The game has cards but was never launched, so Steam owes no count yet.</summary>
+    public bool IsUnstarted { get; }
+
+    public string DropsText => IsUnstarted
+        ? "карточки есть"
+        : $"{DropsRemaining} {Plural.Of(DropsRemaining, "карточка", "карточки", "карточек")}";
 
     public string StateText => IsActive
         ? "крутится сейчас"
         : IsReady
             ? "ждёт очереди"
-            : $"нужно ещё {Math.Max(0, CardFarmPlanner.HoursBeforeDropsBegin - HoursPlayed):0.#} ч";
+            : IsUnstarted
+                ? "ещё не начинали"
+                : $"нужно ещё {Math.Max(0, CardFarmPlanner.HoursBeforeDropsBegin - HoursPlayed):0.#} ч";
 
-    public string HoursText => $"в Steam {HoursPlayed:0.#} ч";
+    public string HoursText => IsUnstarted && HoursPlayed <= 0
+        ? "в Steam ещё не запускали"
+        : $"в Steam {HoursPlayed:0.#} ч";
 }

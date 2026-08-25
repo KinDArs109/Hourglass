@@ -275,9 +275,28 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
 
     public bool HasFarmGames => FarmGames.Count > 0;
 
-    public string FarmSummary => FarmGames.Count == 0
-        ? "Список появится после первого чтения значков"
-        : $"{Plural.Games(FarmGames.Count)} с карточками · всего {FarmGames.Sum(game => game.DropsRemaining)} шт.";
+    public string FarmSummary
+    {
+        get
+        {
+            if (FarmGames.Count == 0)
+                return "Список появится после первого чтения значков";
+
+            // Games that were never started have no count to add up — Steam only says
+            // how many drops are left once the game has been played.
+            var drops = FarmGames.Sum(game => Math.Max(0, game.DropsRemaining));
+            var unstarted = FarmGames.Count(game => game.IsUnstarted);
+
+            var summary = $"{Plural.Games(FarmGames.Count)} с карточками";
+            if (drops > 0)
+                summary += $" · готовых карточек {drops} шт.";
+
+            if (unstarted > 0)
+                summary += $" · ещё не начинали {unstarted}";
+
+            return summary;
+        }
+    }
 
     // ------------------------------------------------------------- history
 
@@ -444,7 +463,7 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
         {
             var known = _config.Library.ToDictionary(
                 entry => entry.AppId,
-                entry => new OwnedGame(entry.AppId, entry.Name, entry.PlaytimeMinutes));
+                entry => new OwnedGame(entry.AppId, entry.Name, entry.PlaytimeMinutes, entry.HasCards));
 
             var plan = await _cardFarm
                 .PlanAsync(_session, known, CancellationToken.None)
@@ -1067,7 +1086,7 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
         _session.RefreshLibraryNowAsync(cancellationToken);
 
     public IReadOnlyList<OwnedGame> Library => _config.Library
-        .Select(entry => new OwnedGame(entry.AppId, entry.Name, entry.PlaytimeMinutes))
+        .Select(entry => new OwnedGame(entry.AppId, entry.Name, entry.PlaytimeMinutes, entry.HasCards))
         .ToList();
 
     public bool HasLibrary => _config.Library.Count > 0;
@@ -1261,7 +1280,8 @@ public sealed class AccountViewModel : ViewModelBase, IDisposable
             {
                 AppId = game.AppId,
                 Name = game.Name,
-                PlaytimeMinutes = game.PlaytimeMinutes
+                PlaytimeMinutes = game.PlaytimeMinutes,
+                HasCards = game.HasCards
             })
             .ToList();
 

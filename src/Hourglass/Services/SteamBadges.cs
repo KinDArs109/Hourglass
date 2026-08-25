@@ -6,7 +6,15 @@ using Hourglass.Models;
 namespace Hourglass.Services;
 
 /// <summary>One game's card-drop state, as the Steam badge page reports it.</summary>
-public sealed record CardBadge(uint AppId, string Name, int DropsRemaining, double HoursPlayed);
+/// <summary>
+/// What Steam owes for one game. <c>DropsRemaining</c> below zero means nobody knows
+/// yet: the game has cards but has never been started, so it has no badge to read.
+/// </summary>
+public sealed record CardBadge(uint AppId, string Name, int DropsRemaining, double HoursPlayed)
+{
+    /// <summary>True when the count is unknown because the game was never played.</summary>
+    public bool IsUnstarted => DropsRemaining < 0;
+}
 
 /// <summary>
 /// Reads the account's badge pages to find out where card drops are still waiting.

@@ -58,6 +58,11 @@ public sealed class SteamBoostSession : IDisposable
     private volatile bool _isRunning;
     private volatile bool _isSignedOn;
     private DateTime _lastLibraryRefreshUtc = DateTime.MinValue;
+    private IReadOnlyCollection<SteamApps.LicenseListCallback.License> _licenses =
+        Array.Empty<SteamApps.LicenseListCallback.License>();
+
+    /// <summary>Null until the licences have been walked for this sign-in.</summary>
+    private IReadOnlyList<OwnedGame>? _licenseApps;
     private long _boostingSinceStamp;
     private ulong _steamId;
     private bool _isReportingGames;
@@ -107,6 +112,17 @@ public sealed class SteamBoostSession : IDisposable
             callback => Publish(new SessionEvent(SessionEventKind.SignedOff, callback.Result))));
         _subscriptions.Add(_callbacks.Subscribe<SteamUser.AccountInfoCallback>(
             callback => PersonaResolved?.Invoke(this, callback.PersonaName)));
+
+        // The licence list is what the account really holds. Steam's own list of games
+        // leaves out free titles that were never launched, so the two numbers rarely
+        // agree and the gap is the first thing to check when games are missing.
+        _subscriptions.Add(_callbacks.Subscribe<SteamApps.LicenseListCallback>(
+            callback =>
+            {
+                _licenses = callback.LicenseList;
+                _licenseApps = null;
+                _logger.Info(Username, $"Лицензий на аккаунте: {callback.LicenseList.Count}");
+            }));
     }
 
     public string Username { get; }
@@ -482,6 +498,59 @@ public sealed class SteamBoostSession : IDisposable
     }
 
     /// <summary>
+    /// Adds the games Steam's own list leaves out — free titles the account holds a
+    /// licence for but has never launched. The licences are walked once per sign-in and
+    /// the result kept: it takes two rounds of product lookups and does not change while
+    /// the session lasts.
+    /// </summary>
+    private async Task<IReadOnlyList<OwnedGame>> AddFreeGamesAsync(
+        IReadOnlyList<OwnedGame> library, CancellationToken cancellationToken)
+    {
+        if (_licenses.Count == 0)
+            return library;
+
+        if (_licenseApps is null)
+        {
+            try
+            {
+                _licenseApps = await SteamOwnedApps
+                    .FetchAsync(_client, _licenses, cancellationToken)
+                    .ConfigureAwait(false);
+
+                _logger.Info(Username, $"По лицензиям найдено игр: {_licenseApps.Count}");
+            }
+            catch (Exception ex) when (ex is TimeoutException or InvalidOperationException
+                                           or AsyncJobFailedException or OperationCanceledException)
+            {
+                _logger.Warn(Username, $"Список игр по лицензиям получить не удалось: {ex.Message}");
+
+                // Empty rather than null: a failure should not be retried on every
+                // refresh for the rest of the session.
+                _licenseApps = Array.Empty<OwnedGame>();
+                return library;
+            }
+        }
+
+        if (_licenseApps.Count == 0)
+            return library;
+
+        // Steam's own entries win on playtime, which the licences do not carry; the
+        // licences win on whether the game has cards, which Steam's list never says.
+        var merged = library.ToDictionary(game => game.AppId);
+
+        foreach (var game in _licenseApps)
+        {
+            merged[game.AppId] = merged.TryGetValue(game.AppId, out var owned)
+                ? owned with { HasCards = game.HasCards }
+                : game;
+        }
+
+        return merged.Values
+            .OrderBy(game => game.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>
     /// Reads the library while signed in. Never fatal: boosting must continue even if
     /// Steam declines to answer.
     /// </summary>
@@ -492,6 +561,7 @@ public sealed class SteamBoostSession : IDisposable
         try
         {
             var library = await SteamLibrary.FetchAsync(_client, steamId, cancellationToken).ConfigureAwait(false);
+            library = await AddFreeGamesAsync(library, cancellationToken).ConfigureAwait(false);
             if (library.Count > 0)
             {
                 _logger.Info(Username, $"Библиотека обновлена: игр {library.Count}");

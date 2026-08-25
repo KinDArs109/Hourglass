@@ -25,23 +25,30 @@ public static class CardFarmPlanner
 
     public static FarmPlan Plan(IReadOnlyList<CardBadge> badges)
     {
-        var pending = badges.Where(badge => badge.DropsRemaining > 0).ToList();
+        // Two kinds of work: games with drops still owed, and games that have cards but
+        // were never launched, so Steam has not started counting for them at all.
+        var pending = badges
+            .Where(badge => badge.DropsRemaining > 0 || badge.IsUnstarted)
+            .ToList();
 
         if (pending.Count == 0)
             return new FarmPlan(
                 Array.Empty<uint>(), "Карточек для фарма не осталось", IsFinished: true, pending);
 
-        var totalDrops = pending.Sum(badge => badge.DropsRemaining);
+        var totalDrops = pending.Sum(badge => Math.Max(0, badge.DropsRemaining));
+        var unstarted = pending.Count(badge => badge.IsUnstarted);
 
         // Ready games first, then the ones still short of the threshold: that is the
         // order the farm will actually work through them.
         var ordered = pending
-            .OrderByDescending(badge => badge.HoursPlayed >= HoursBeforeDropsBegin)
+            .OrderByDescending(badge => badge.DropsRemaining > 0 &&
+                                        badge.HoursPlayed >= HoursBeforeDropsBegin)
             .ThenByDescending(badge => badge.DropsRemaining)
+            .ThenByDescending(badge => badge.HoursPlayed)
             .ToList();
 
         var ready = ordered
-            .Where(badge => badge.HoursPlayed >= HoursBeforeDropsBegin)
+            .Where(badge => badge.DropsRemaining > 0 && badge.HoursPlayed >= HoursBeforeDropsBegin)
             .ToList();
 
         if (ready.Count > 0)
@@ -50,7 +57,10 @@ public static class CardFarmPlanner
             var readyDrops = selected.Sum(badge => badge.DropsRemaining);
 
             var queued = pending.Count - selected.Count;
-            var tail = queued > 0 ? $" · в очереди ещё {queued} игр, карточек всего {totalDrops}" : "";
+            var waiting = unstarted > 0 ? $", не начато {unstarted}" : "";
+            var tail = queued > 0
+                ? $" · в очереди ещё {queued} игр{waiting}, карточек всего {totalDrops}"
+                : "";
 
             var status = selected.Count == 1
                 ? $"Фарм «{selected[0].Name}» · карточек осталось {readyDrops}{tail}"
@@ -62,13 +72,16 @@ public static class CardFarmPlanner
 
         // Nothing is past the threshold yet. Below it Steam ignores a game that is idled
         // alongside others, so the closest one is warmed up on its own and the rest wait.
-        var warmup = pending.OrderByDescending(badge => badge.HoursPlayed).First();
+        var warmup = ordered.First();
         var hoursLeft = Math.Max(0, HoursBeforeDropsBegin - warmup.HoursPlayed);
+
+        var totals = totalDrops > 0
+            ? $"в очереди игр {pending.Count}, карточек всего {totalDrops}"
+            : $"в очереди игр {pending.Count}";
 
         return new FarmPlan(
             new[] { warmup.AppId },
-            $"Разогрев «{warmup.Name}»: ещё {hoursLeft:0.#} ч до первых карточек · " +
-            $"в очереди игр {pending.Count}, карточек всего {totalDrops}",
+            $"Разогрев «{warmup.Name}»: ещё {hoursLeft:0.#} ч до первых карточек · {totals}",
             IsFinished: false,
             ordered);
     }

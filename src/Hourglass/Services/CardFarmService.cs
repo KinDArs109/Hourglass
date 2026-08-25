@@ -41,9 +41,12 @@ public sealed class CardFarmService
                 .FetchAsync(_httpClientFactory, session.SteamId, token, known, cancellationToken)
                 .ConfigureAwait(false);
 
-            var plan = CardFarmPlanner.Plan(badges);
+            var unstarted = FindUnstarted(known, badges);
+            var plan = CardFarmPlanner.Plan(badges.Concat(unstarted).ToList());
+
             _logger.Info(session.Username,
-                $"Значки прочитаны: игр с карточками {badges.Count(badge => badge.DropsRemaining > 0)}");
+                $"Значки прочитаны: игр с карточками {badges.Count(badge => badge.DropsRemaining > 0)}" +
+                (unstarted.Count > 0 ? $", ещё не начато {unstarted.Count}" : ""));
 
             return plan;
         }
@@ -57,5 +60,24 @@ public sealed class CardFarmService
             _logger.Warn(session.Username, "Фарм карточек: Steam не ответил, попробую позже");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Games the account holds that have cards but no badge to read: never launched, so
+    /// Steam has nothing to report about them yet. These are exactly the free games that
+    /// get collected and never opened, and the farm would otherwise never touch them.
+    /// </summary>
+    private static IReadOnlyList<CardBadge> FindUnstarted(
+        IReadOnlyDictionary<uint, OwnedGame> known,
+        IReadOnlyList<CardBadge> badges)
+    {
+        var seen = badges.Select(badge => badge.AppId).ToHashSet();
+
+        return known.Values
+            .Where(game => game.HasCards && !seen.Contains(game.AppId))
+            .Select(game => new CardBadge(
+                game.AppId, game.Name, DropsRemaining: -1, game.PlaytimeMinutes / 60d))
+            .OrderByDescending(game => game.HoursPlayed)
+            .ToList();
     }
 }
