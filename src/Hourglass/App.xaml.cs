@@ -62,6 +62,11 @@ public partial class App : Application
 
         StartActivationListener();
 
+        // Left until the app has settled: the windows that need covering, including the
+        // hidden ones WPF keeps for itself, are not all there any earlier.
+        Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,
+            () => _services.GetRequiredService<SessionEndGuard>().Start());
+
         // Start and finish both leave a mark. Without them a program that is gone in the
         // morning is indistinguishable from one that was closed on purpose, and the
         // journal is the only witness there is.
@@ -73,12 +78,25 @@ public partial class App : Application
         base.OnStartup(e);
     }
 
-    private void OnSessionEnding(object sender, SessionEndingCancelEventArgs e) =>
+    /// <summary>
+    /// WPF asks about the session through a window of its own, and one that slipped past
+    /// the guard would answer yes and take the program with it. An installer turned down
+    /// a moment ago is that same request coming round again, not a shutdown.
+    /// </summary>
+    private void OnSessionEnding(object sender, SessionEndingCancelEventArgs e)
+    {
+        if (_services?.GetService<SessionEndGuard>()?.RefusedJustNow == true)
+        {
+            e.Cancel = true;
+            return;
+        }
+
         _services?.GetService<IAppLogger>()?.Info(
             AppLogScopes.App,
             e.ReasonSessionEnding == ReasonSessionEnding.Shutdown
                 ? "Windows выключается — закрываюсь"
                 : "Выход из учётной записи Windows — закрываюсь");
+    }
 
     protected override void OnExit(ExitEventArgs e)
     {
@@ -110,6 +128,7 @@ public partial class App : Application
         services.AddSingleton<UpdateService>();
         services.AddSingleton<SystemTrayService>();
         services.AddSingleton<SleepBlocker>();
+        services.AddSingleton<SessionEndGuard>();
         services.AddSingleton<IDialogService, DialogService>();
 
         services.AddHttpClient(HttpClients.SteamApi, client =>
